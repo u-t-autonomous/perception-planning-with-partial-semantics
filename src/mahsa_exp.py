@@ -3,7 +3,7 @@
 """
     Description:    Velocity controller node for experiment with Mahsa
     Author:         Jesse Quattrociocchi
-    Created:        May 2019
+    Created:        May-July 2019
 """
 
 import rospy
@@ -21,6 +21,7 @@ from tf.transformations import euler_from_quaternion
 
 from grid_state_converter import *
 
+# ------------------ Start Class Definitions ------------------
 
 class VelocityController:
     """Simple velocity controller meant to be used with turtlebot3"""
@@ -229,49 +230,9 @@ class Scanner(Scan):
         transform = self.tf_buffer.lookup_transform(to_frame, from_frame, rospy.Time(0), rospy.Duration(1.0))
         return tf2_geometry_msgs.do_transform_pose(p1, transform)
 
-    # def convert_pointCloud_to_gridCloud(self, pc):
-    #     ''' The input is a pointcloud2 generator, where each item is a tuple '''
-    #     if not isinstance(pc, types.GeneratorType):
-    #         print("The input must be a pointcloud2 generator (not the generator function)")
-    #         sys.exit()
-    #     states = set()
-    #     for item in pc:
-    #         print(item)
-    #         new_pose = self.transform_coordinates(item)
-    #         print(new_pose)
-    #         pcPoint = Point()
-    #         pcPoint.x = new_pose[0]
-    #         pcPoint.y = new_pose[1]
-    #         pcPoint.z = new_pose[2]
-    #         states.add(self.grid_converter.cart2state(pcPoint))
-    #     return states
+# ------------------ End Class Definitions --------------------
 
-    # def transform_coordinates(self, coord, from_frame='base_scan', to_frame='odom'):
-    #     ''' Gets frame transform at time requested '''
-    #     print(self.listener.frameExists(from_frame))
-    #     print(self.listener.frameExists(to_frame))
-    #     if self.listener.frameExists(from_frame) and self.listener.frameExists(to_frame):
-    #         t = self.listener.getLatestCommonTime(to_frame, from_frame)
-    #         p1 = PoseStamped()
-    #         p1.header.frame_id = from_frame
-    #         p1.pose.pose.x = coord[0]
-    #         p1.pose.pose.y = coord[1] # Not sure this is right
-    #         p1.pose.pose.z = coord[2]
-    #         p1.pose.orientation.w = 1.0    # Neutral orientation
-    #         return self.listener.transformPose(to_frame, p1)
-    #     # try:
-    #     #     (trans,rot) = self.listener.lookupTransform(from_frame, to_frame, rospy.Time(0))
-    #     #     # how do i use the transform on the coord ???
-    #     #     return coord
-    #     # except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-    #     #     return None
-
-
-
-
-
-
-
+# ------------------ Start Function Definitions ---------------
 
 def get_direction_from_key_stroke():
     while(True):
@@ -398,8 +359,7 @@ def make_array(scan, vis, array_shape):
 
     return a
 
-
-
+# ------------------ End Function Definitions -----------------
 
 if __name__ == '__main__':
     rospy.init_node("velocity_controller")
