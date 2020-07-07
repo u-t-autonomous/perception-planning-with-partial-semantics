@@ -1,6 +1,6 @@
 import sys
 import time
-from math import isclose
+# from math import isclose
 import numpy as np
 import copy
 import itertools
@@ -563,7 +563,7 @@ def verifier(model, spec):
             n_opt_act = 0
             opt_act = []
             for a in model.actions[model.enabled_actions[s]]:
-                if isclose(vars_val[s],
+                if np.isclose(vars_val[s],
                            np.sum([model.transitions[s,a,ss]*vars_val[ss]
                                    for ss in model.states if model.transitions[s,a,ss]!=0]),
                            abs_tol=1e-24):
@@ -685,11 +685,6 @@ def jsd(x,y): # Jensen-shannon divergence
     return d
 
 def info_div(pr_belief, post_belief):
-    """Compute divergence between prior and posterior belief
-    with Jensen–Shannon divergence"""
-
-    # total divergence = sum of divergence for all states and properties
-
     div = np.zeros(pr_belief.shape)
     for i_s,s in enumerate(pr_belief):
         for i_p,p in enumerate(s):
