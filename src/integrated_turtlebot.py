@@ -1,8 +1,6 @@
 # for planner
-import setup_path
 import sys
 import time
-from math import isclose
 import numpy as np
 import copy
 import itertools
@@ -122,28 +120,28 @@ for iter in range(n_iter):
         #                                  p_obs_model, bayes_flag)
 
 ############################################################################### commented for scenario 2
-            # array from Lidar
-            # lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
-            lid_adapted = np.reshape(lid, len(model.states))
+        # array from Lidar
+        # lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
+        lid_adapted = np.reshape(lid, len(model.states))
 
-            # update belief
-            next_label_belief = copy.deepcopy(model.label_belief)
-            visit_freq_next = copy.deepcopy(visit_freq) + 1
-            for s in model.states:
-                # update frequency
-                if lid_adapted[s] == -1:
-                    visit_freq_next[s] -= 1
-                elif lid_adapted[s] == 0:
-                    pass
-                # update for 'obstacle'
-                elif lid_adapted[s] == 1:
-                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
-                # # update for 'target'
-                # elif lid_adapted[s] == 2:
-                #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
-                else:
-                    raise NameError("Given value in the Lidar output is unaccepted")
-            visit_freq = copy.deepcopy(visit_freq_next)
+        # update belief
+        next_label_belief = copy.deepcopy(model.label_belief)
+        visit_freq_next = copy.deepcopy(visit_freq) + 1
+        for s in model.states:
+            # update frequency
+            if lid_adapted[s] == -1:
+                visit_freq_next[s] -= 1
+            elif lid_adapted[s] == 0:
+                pass
+            # update for 'obstacle'
+            elif lid_adapted[s] == 1:
+                next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
+            # # update for 'target'
+            # elif lid_adapted[s] == 2:
+            #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
+            else:
+                raise NameError("Given value in the Lidar output is unaccepted")
+        visit_freq = copy.deepcopy(visit_freq_next)
 
 ##############################################################################
         # move to next state
