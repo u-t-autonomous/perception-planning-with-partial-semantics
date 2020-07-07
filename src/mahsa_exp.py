@@ -6,6 +6,7 @@
     Created:        May-July 2019
 """
 
+# Imports for ROS side
 import rospy
 import numpy as np
 import sys
@@ -19,21 +20,10 @@ import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import LaserScan, PointCloud2
 from tf.transformations import euler_from_quaternion
 from grid_state_converter import *
-
-
-import time
+# Imports for Algorithm side
 import copy
-import itertools
-from scipy.special import comb
-from scipy.stats import entropy
-from scipy.spatial import distance
 import random
-import gurobipy as grb
-import pandas as pd
-import matplotlib.pyplot as plt
 from partial_semantics import *
-
-
 
 
 # ------------------ Start Class Definitions ------------------
@@ -174,8 +164,8 @@ class VelocityController:
         self.cmd_vel_pub.publish(Twist())
         if self.debug:
             print("Stopping PID")
+            print("Position is currently: ({:.5f},{:.5f})    Yaw is currently: [{:.5f}]".format(self.x, self.y, self.yaw))
 
-        print("Position is currently: ({:.5f},{:.5f})    Yaw is currently: [{:.5f}]".format(self.x, self.y, self.yaw))
         print("** Goal Reached **")
 
 class Scan(object):
@@ -309,7 +299,7 @@ def move_TB_keyboard(controller_object):
         controller_object.go_to_point(wp)
 
 def move_TB(controller_object, dir_val):
-    """ Function to wrap up the process of moving the turtlebot via key strokes.
+    """ Function to wrap up the process of moving the turtlebot via input.
         Requires ROS to be running and a controller object """
     pose = Point(controller_object.x, controller_object.y, None)
     if dir_val == 'hold':

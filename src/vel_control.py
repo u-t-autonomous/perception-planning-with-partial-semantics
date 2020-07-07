@@ -1,7 +1,7 @@
 #! /usr/bin/env/ python2
 
 """
-    Description:    Velocity controller node for experiment with Mahsa
+    Description:    Velocity controller NEEDS TO BE CLEANED UP!!!!
     Author:         Jesse Quattrociocchi
     Created:        May 2019
 """
