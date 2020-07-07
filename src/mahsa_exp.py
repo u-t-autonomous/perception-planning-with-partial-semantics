@@ -91,6 +91,7 @@ class VelocityController:
 
         # Stop rotation
         self.cmd_vel_pub.publish(Twist())
+        rospy.sleep(1)
         if self.debug:
             print("Stopping the turn")
 
@@ -156,9 +157,10 @@ class VelocityController:
 
             last_rotation = rotation
             self.cmd_vel_pub.publish(self.vel_cmd)
-            self.r.sleep()
             previous_distance = distance
+            previous_angle = angle_to_goal
             total_distance = total_distance + distance
+            self.r.sleep()
 
         # Stop motion
         self.cmd_vel_pub.publish(Twist())
@@ -214,11 +216,15 @@ class Scanner(Scan):
             if self.debug: print(item)
             new_pose = self.transform_coordinates(item)
             if self.debug: print(new_pose)
-            pcPoint = Point()
-            pcPoint.x = new_pose.pose.position.x
-            pcPoint.y = new_pose.pose.position.y
-            pcPoint.z = new_pose.pose.position.z
-            states.add(self.grid_converter.cart2state(pcPoint))
+            if not (self.grid_converter.base.x < new_pose.pose.position.x < self.grid_converter.maximum.x) or not (self.grid_converter.base.y < new_pose.pose.position.y < self.grid_converter.maximum.y):
+                continue
+            else:
+                pcPoint = Point()
+                pcPoint.x = new_pose.pose.position.x
+                pcPoint.y = new_pose.pose.position.y
+                pcPoint.z = new_pose.pose.position.z
+                states.add(self.grid_converter.cart2state(pcPoint))
+
         return states
 
     def transform_coordinates(self, coord, from_frame='base_scan', to_frame='odom'):
@@ -346,10 +352,13 @@ def get_vis_states_set(current_loc, converter, vis_dis=3.5):
     s = set()
     a_point = Point()
     for item in vis_points:
-        a_point.x = item[0]
-        a_point.y = item[1]
-        a_point.z = 0
-        s.add(converter.cart2state(a_point))
+        if not (converter.base.x < item[0] < converter.maximum.x) or not (converter.base.y < item[1] < converter.maximum.y):
+            continue
+        else:
+            a_point.x = item[0]
+            a_point.y = item[1]
+            a_point.z = 0
+            s.add(converter.cart2state(a_point))
 
     return s
 
@@ -369,11 +378,14 @@ def get_occluded_states_set(controller, scanner, vis_dis=3.5):
     # Convert those points included in the set to the odom frame and make a new set
     for item in temp:
         new_pose = scanner.transform_coordinates(item)
-        occlPoint = Point()
-        occlPoint.x = new_pose.pose.position.x
-        occlPoint.y = new_pose.pose.position.y
-        occlPoint.z = new_pose.pose.position.z
-        occl.add(scanner.grid_converter.cart2state(occlPoint))
+        if not (scanner.grid_converter.base.x < new_pose.pose.position.x < scanner.grid_converter.maximum.x) or not (scanner.grid_converter.base.y < new_pose.pose.position.y < scanner.grid_converter.maximum.y):
+            continue
+        else:
+            occlPoint = Point()
+            occlPoint.x = new_pose.pose.position.x
+            occlPoint.y = new_pose.pose.position.y
+            occlPoint.z = new_pose.pose.position.z
+            occl.add(scanner.grid_converter.cart2state(occlPoint))
 
     return occl
 
@@ -567,7 +579,7 @@ if __name__ == '__main__':
             # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
             direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
             move_TB(vel_controller, direction[action_hist[1][-1]])
-            make_user_wait()
+            # make_user_wait()
             # ----------------- Q --------------------------------------- 
 
             # divergence test on belief
