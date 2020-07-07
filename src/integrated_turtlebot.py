@@ -80,7 +80,7 @@ for iter in range(n_iter):
 
         if act_info_flag:
             # risk evaluation
-            prob_sat = stat_verifier(model,state_hist[-1],opt_policy,spec,n_sample)
+            prob_sat = stat_verifier(model,state_hist[-1],opt_policy,spec_est,n_sample)
             risk = np.abs(vars_val[state_hist[-1]] - prob_sat); print(vars_val[state_hist[-1]],prob_sat)
             risk_hist.append(risk)
             print("Risk due to Perception Uncertainty:   ",risk)
