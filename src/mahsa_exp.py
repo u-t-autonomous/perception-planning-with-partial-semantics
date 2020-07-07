@@ -179,7 +179,6 @@ class Scan(object):
     def __scanCB(self, msg):
         self.raw = msg
         self.cloud = self.lp.projectLaser(msg)
-        # self.point_generator = pc2.read_points(self.cloud)
 
     def print_scan(self, scan_type='cloud'):
         if not isinstance(scan_type, str):
@@ -200,8 +199,6 @@ class Scanner(Scan):
     def __init__(self, scan_topic_name, grid_converter, debug=False):
         super(Scanner, self).__init__(scan_topic_name)
         self.grid_converter = grid_converter
-        # self.listener = tf.TransformListener()
-        # self.listener.waitForTransform('base_scan', 'odom', rospy.Time(), rospy.Duration(4.0))
         self.tf_buffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tf_buffer)
         self.debug = debug
@@ -334,8 +331,10 @@ def make_user_wait():
 
 
 def get_visible_points_circle(center, radius):
-    theta = np.arange(0, 2*np.pi, (2*np.pi)/365)
-    rays = np.arange(0, radius, 0.1)
+    # theta = np.arange(0, 2*np.pi, (2*np.pi)/360)
+    # rays = np.arange(0, radius, 0.1)
+    theta = np.linspace(0, 2*np.pi, 360)
+    rays = np.linspace(0, radius, 35)
     vis_points = set()
     for angle in theta:
         for r in rays:
@@ -355,6 +354,37 @@ def get_vis_states_set(current_loc, converter, vis_dis=3.5):
         s.add(converter.cart2state(a_point))
 
     return s
+
+# def get_occluded_states_set(controller, scanner, vis_dis=3.5):
+#     for item in scanner.pc_generator(field_names=('x', 'y', 'z','index')):
+#         angle = item[3]*scanner.raw.angle_increment
+#         radius = item[0]/np.cos(angle) # x/cos(theta)
+#         rays = np.arange(radius, vis_dis, 0.1)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # occ_s = set()
+    # for item in pc:
+    #     if self.debug: print(item)
+    #     new_pose = self.transform_coordinates(item)
+    #     if self.debug: print(new_pose)
+    #     pcPoint = Point()
+    #     pcPoint.x = new_pose.pose.position.x
+    #     pcPoint.y = new_pose.pose.position.y
+    #     pcPoint.z = new_pose.pose.position.z
+    #     occ_s.add(self.grid_converter.cart2state(pcPoint))
+    # return occ_s
 
 def make_array(scan, vis, array_shape):
     ''' Assumes array_shape is (row,col).
@@ -512,6 +542,7 @@ if __name__ == '__main__':
             # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
             scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
             vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+            # occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
             lid = make_array(scan_states, vis_states, shape)
             print(lid)
             # ----------------- Q ---------------------------------------
