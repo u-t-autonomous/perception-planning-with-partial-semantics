@@ -1,6 +1,5 @@
 import sys
 import time
-# from math import isclose
 import numpy as np
 import copy
 import itertools
@@ -468,9 +467,9 @@ class Automaton:
 def verifier(model, spec):
     """Find a policy that maximizes the probability of specifiation realization"""
 
-    if type(model) == MC:
+    if isinstance(model, MC):
         model_type = 'MC'
-    elif type(model) == MDP:
+    elif isinstance(model, MDP):
         model_type = 'MDP'
     else:
         raise NameError("Given model is not supported for verification")
@@ -511,7 +510,7 @@ def verifier(model, spec):
         for s in model.states:
             if s not in spec[0]:
 
-                if type(model) == MC:
+                if isinstance(model, MC):
                     constraints.update({n_consts : grb_model.addConstr(
                                     lhs=xs_vars[s],
                                     sense=grb.GRB.GREATER_EQUAL,
@@ -520,7 +519,7 @@ def verifier(model, spec):
                                     name="constraint_{0}".format(n_consts))})
                     n_consts += 1
 
-                elif type(model) == MDP:
+                elif isinstance(model, MDP):
                     for a in model.actions[model.enabled_actions[s]]:
                         constraints.update({n_consts : grb_model.addConstr(
                                         lhs=xs_vars[s],
@@ -556,19 +555,16 @@ def verifier(model, spec):
 
     # find the optimal policy
     opt_policy = None
-    if type(model) == MDP:
+    if isinstance(model, MDP):
         opt_policy = []
 
         for s in model.states:
             n_opt_act = 0
             opt_act = []
             for a in model.actions[model.enabled_actions[s]]:
-                if np.isclose(vars_val[s],
-                           np.sum([model.transitions[s,a,ss]*vars_val[ss]
-                                   for ss in model.states if model.transitions[s,a,ss]!=0]),
-                           abs_tol=1e-24):
-                        opt_act.append(a)
-                        n_opt_act += 1
+                if np.isclose(vars_val[s], np.sum([model.transitions[s,a,ss]*vars_val[ss] for ss in model.states if model.transitions[s,a,ss]!=0]), atol=1e-24):
+                    opt_act.append(a)
+                    n_opt_act += 1
 
             opt_policy.append(opt_act)
 
