@@ -331,8 +331,6 @@ def make_user_wait():
 
 
 def get_visible_points_circle(center, radius):
-    # theta = np.arange(0, 2*np.pi, (2*np.pi)/360)
-    # rays = np.arange(0, radius, 0.1)
     theta = np.linspace(0, 2*np.pi, 360)
     rays = np.linspace(0, radius, 35)
     vis_points = set()
@@ -355,44 +353,39 @@ def get_vis_states_set(current_loc, converter, vis_dis=3.5):
 
     return s
 
-# def get_occluded_states_set(controller, scanner, vis_dis=3.5):
-#     for item in scanner.pc_generator(field_names=('x', 'y', 'z','index')):
-#         angle = item[3]*scanner.raw.angle_increment
-#         radius = item[0]/np.cos(angle) # x/cos(theta)
-#         rays = np.arange(radius, vis_dis, 0.1)
+def get_occluded_states_set(controller, scanner, vis_dis=3.5):
+    occl = set()
+    temp = set()
+    # Get all the points along a ray passing through each point in the pointcloud
+    for item in scanner.pc_generator(field_names=('x', 'y', 'z','index')):
+        angle = item[3]*scanner.raw.angle_increment
+        radius = item[0]/np.cos(angle) # x/cos(theta)
+        rays = np.linspace(radius, vis_dis, (vis_dis-radius)/0.1)
+        for r in rays:
+            x = r*np.cos(angle)
+            y = r*np.sin(angle)
+            temp.add((x,y,0)) # z is here for the transformation later on
 
+    # Convert those points included in the set to the odom frame and make a new set
+    for item in temp:
+        new_pose = scanner.transform_coordinates(item)
+        occlPoint = Point()
+        occlPoint.x = new_pose.pose.position.x
+        occlPoint.y = new_pose.pose.position.y
+        occlPoint.z = new_pose.pose.position.z
+        occl.add(scanner.grid_converter.cart2state(occlPoint))
 
+    return occl
 
-
-
-
-
-
-
-
-
-
-
-
-    # occ_s = set()
-    # for item in pc:
-    #     if self.debug: print(item)
-    #     new_pose = self.transform_coordinates(item)
-    #     if self.debug: print(new_pose)
-    #     pcPoint = Point()
-    #     pcPoint.x = new_pose.pose.position.x
-    #     pcPoint.y = new_pose.pose.position.y
-    #     pcPoint.z = new_pose.pose.position.z
-    #     occ_s.add(self.grid_converter.cart2state(pcPoint))
-    # return occ_s
-
-def make_array(scan, vis, array_shape):
+def make_array(scan, vis, occl, array_shape):
     ''' Assumes array_shape is (row,col).
         This does not check for overlapping states in the vis set and the scan set.
         It should work though bc of order. '''
     a = -np.ones(array_shape)
+    real_occl = occl - occl.intersection(scan)
+    real_vis = vis - vis.intersection(real_occl)
 
-    for v in vis:
+    for v in real_vis:
         row_ind = v / array_shape[1]
         col_ind = v % array_shape[1]
         a[row_ind,col_ind] = 0
@@ -425,6 +418,9 @@ if __name__ == '__main__':
     scanner = Scanner('/scan', grid_converter)
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
+
+    init_point = Point(0.5, 0.5, None)
+    vel_controller.go_to_point(init_point)
 
 
     ############  The following is the code from Mahsa that runs her algorithm  ############
@@ -542,8 +538,8 @@ if __name__ == '__main__':
             # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
             scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
             vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-            # occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-            lid = make_array(scan_states, vis_states, shape)
+            occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+            lid = make_array(scan_states, vis_states, occluded_states, shape)
             print(lid)
             # ----------------- Q ---------------------------------------
 
