@@ -59,10 +59,10 @@ class VelocityController:
         angle_error = self.yaw - angle_to_goal
 
         if self.debug:
-            print("Starting to turn towards goal")
+            print("Starting to rotate towards goal")
 
         while abs(angle_error) > 0.05:
-            # # Only useful if there is some slip/slide of the turtlebot while rotating # # #
+            ''' Only useful if there is some slip/slide of the turtlebot while rotating '''
             # error_x = goal.x - self.x
             # error_y = goal.y - self.y
             # angle_to_goal = np.arctan2(error_y, error_x) # # #
@@ -96,16 +96,16 @@ class VelocityController:
             print("Stopping the turn")
 
         ''' Then use a PID that controls the cmd velocity and drives the distance error to zero '''
+
         error_x = goal.x - self.x
         error_y = goal.y - self.y
+        distance_error = np.sqrt(error_x**2 + error_y**2)
         angle_to_goal = np.arctan2(error_y, error_x)
-        last_rotation = 0
-        goal_distance = np.sqrt(error_x**2 + error_y**2)
-        distance = goal_distance
-        previous_distance = 0
-        total_distance = 0
-        previous_angle = 0
-        total_angle = 0
+        angle_error = abs(self.yaw - angle_to_goal)
+        previous_distance_error = 0
+        total_distance_error = 0
+        previous_angle_error = 0
+        total_angle_error = 0
 
         kp_distance = 1
         ki_distance = 0.1
@@ -118,49 +118,111 @@ class VelocityController:
         if self.debug:
             print("Starting the PID")
 
-        while distance > 0.05:
-            y_start = self.y
-            x_start = self.x
-            rotation = self.yaw
-            error_x = goal.x - x_start
-            error_y = goal.y - y_start
+        while distance_error > 0.05:
+            error_x = goal.x - self.x
+            error_y = goal.y - self.y
+            distance_error = np.sqrt(error_x**2 + error_y**2)
             angle_to_goal = np.arctan2(error_y, error_x)
-            if self.debug:
-                print("BEFORE -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
-            if angle_to_goal < -np.pi/4 or angle_to_goal > np.pi/4:
-                if goal.y < 0 and y_start < goal.y:
-                    angle_to_goal = -2*np.pi + angle_to_goal
-                elif goal.y >= 0 and y_start > goal.y:
-                    angle_to_goal = 2*np.pi + angle_to_goal
-            if last_rotation > np.pi - 0.1 and rotation <= 0:
-                rotation = 2*np.pi + rotation
-            elif last_rotation < -np.pi + 0.1 and rotation > 0:
-                rotation = -2*np.pi + rotation
-            if self.debug:
-                print("AFTER -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
-            diff_angle = angle_to_goal - previous_angle
-            diff_distance = distance - previous_distance
+            angle_error = abs(self.yaw - angle_to_goal)
 
-            distance = np.sqrt(error_x**2 + error_y**2)
+            total_distance_error = total_distance_error + distance_error
+            total_angle_error = total_angle_error + angle_error
+            diff_distance_error = distance_error - previous_distance_error
+            diff_angle_error = angle_error - previous_angle_error
 
-            control_signal_distance = kp_distance*distance + ki_distance*total_distance + kd_distance*diff_distance
+            control_signal_distance = kp_distance*distance_error + ki_distance*total_distance_error + kd_distance*diff_distance_error
+            control_signal_angle = kp_angle*angle_error + ki_angle*total_angle_error + kd_angle*diff_angle_error
 
-            control_signal_angle = kp_angle*angle_to_goal + ki_angle*total_angle + kd_angle*diff_angle
-
-            self.vel_cmd.angular.z = control_signal_angle - rotation
             self.vel_cmd.linear.x = np.minimum(control_signal_distance, 0.1)
+            self.vel_cmd.angular.z = control_signal_angle
 
-            if self.vel_cmd.angular.z > 0:
-                self.vel_cmd.angular.z = np.minimum(self.vel_cmd.angular.z, 1.0)
+            if angle_to_goal >= 0:
+                if self.yaw <= angle_to_goal and self.yaw >= angle_to_goal - np.pi:
+                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.3)
+                else:
+                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.3)
             else:
-                self.vel_cmd.angular.z = np.maximum(self.vel_cmd.angular.z, -1.0)
+                if self.yaw <= angle_to_goal + np.pi and self.yaw > angle_to_goal:
+                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.3)
+                else:
+                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.3)
 
-            last_rotation = rotation
+            previous_distance_error = distance_error
+            previous_angle_error = angle_error
+
             self.cmd_vel_pub.publish(self.vel_cmd)
-            previous_distance = distance
-            previous_angle = angle_to_goal
-            total_distance = total_distance + distance
             self.r.sleep()
+
+# ------------------ Start of old PID loop ------------------
+
+        # ''' Then use a PID that controls the cmd velocity and drives the distance error to zero '''
+        # error_x = goal.x - self.x
+        # error_y = goal.y - self.y
+        # angle_to_goal = np.arctan2(error_y, error_x)
+        # last_rotation = 0
+        # goal_distance = np.sqrt(error_x**2 + error_y**2)
+        # distance = goal_distance
+        # previous_distance = 0
+        # total_distance = 0
+        # previous_angle = 0
+        # total_angle = 0
+
+        # kp_distance = 1
+        # ki_distance = 0.1
+        # kd_distance = 0.1
+
+        # kp_angle = 1
+        # ki_angle = 0.1
+        # kd_angle = 0.1
+
+        # if self.debug:
+        #     print("Starting the PID")
+
+        # while distance > 0.05:
+        #     y_start = self.y
+        #     x_start = self.x
+        #     rotation = self.yaw
+        #     error_x = goal.x - x_start
+        #     error_y = goal.y - y_start
+        #     angle_to_goal = np.arctan2(error_y, error_x)
+        #     if self.debug:
+        #         print("BEFORE -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
+        #     if angle_to_goal < -np.pi/4 or angle_to_goal > np.pi/4:
+        #         if goal.y < 0 and y_start < goal.y:
+        #             angle_to_goal = -2*np.pi + angle_to_goal
+        #         elif goal.y >= 0 and y_start > goal.y:
+        #             angle_to_goal = 2*np.pi + angle_to_goal
+        #     if last_rotation > np.pi - 0.1 and rotation <= 0:
+        #         rotation = 2*np.pi + rotation
+        #     elif last_rotation < -np.pi + 0.1 and rotation > 0:
+        #         rotation = -2*np.pi + rotation
+        #     if self.debug:
+        #         print("AFTER -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
+        #     diff_angle = angle_to_goal - previous_angle
+        #     diff_distance = distance - previous_distance
+
+        #     distance = np.sqrt(error_x**2 + error_y**2)
+
+        #     control_signal_distance = kp_distance*distance + ki_distance*total_distance + kd_distance*diff_distance
+
+        #     control_signal_angle = kp_angle*angle_to_goal + ki_angle*total_angle + kd_angle*diff_angle
+
+        #     self.vel_cmd.angular.z = control_signal_angle - rotation
+        #     self.vel_cmd.linear.x = np.minimum(control_signal_distance, 0.1)
+
+        #     if self.vel_cmd.angular.z > 0:
+        #         self.vel_cmd.angular.z = np.minimum(self.vel_cmd.angular.z, 1.0)
+        #     else:
+        #         self.vel_cmd.angular.z = np.maximum(self.vel_cmd.angular.z, -1.0)
+
+        #     last_rotation = rotation
+        #     self.cmd_vel_pub.publish(self.vel_cmd)
+        #     previous_distance = distance
+        #     previous_angle = angle_to_goal
+        #     total_distance = total_distance + distance
+        #     self.r.sleep()
+
+# ------------------ End of old PID loop ------------------
 
         # Stop motion
         self.cmd_vel_pub.publish(Twist())
