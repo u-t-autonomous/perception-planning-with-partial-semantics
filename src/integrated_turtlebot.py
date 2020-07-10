@@ -134,6 +134,8 @@ for iter in range(n_iter):
             elif lid_adapted[s] == 0:
                 pass
             # update for 'obstacle'
+            if lid_adapted[s] == 0:
+                next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
             elif lid_adapted[s] == 1:
                 next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
             # # update for 'target'
