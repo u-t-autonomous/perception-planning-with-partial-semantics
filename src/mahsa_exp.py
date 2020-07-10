@@ -284,23 +284,20 @@ class BeliefMarker(object):
         self.pub = rospy.Publisher('visualization_marker', Marker, queue_size=5)
         rospy.sleep(0.5)
         self.marker = Marker()
-        self.marker.header.frame_id = 'map' # Change to odom for experiment
+        self.marker.header.frame_id = 'odom' # Change to odom for experiment
         self.marker.header.stamp = rospy.get_rostime()
         self.marker.id = 0
         self.marker.type = Marker.CUBE_LIST
-        # self.marker.action = Marker.ADD
-        self.marker.points = [Point(0,0,0), Point(2,2,0)]
+        # self.marker.action = Marker.ADD   # Not sure what this is for???
+        self.marker.points = []
         self.marker.pose.orientation = Quaternion(0,0,0,1)
-        self.marker.scale = Vector3(1,1,0.1)
-        self.marker.colors = [ColorRGBA(0.0,0.5,0.0,1.0),ColorRGBA(0.5,0.0,0.0,1.0)]
+        self.marker.scale = Vector3(1,1,0.05)
+        self.marker.colors = []
         self.marker.lifetime = rospy.Duration(0)
 
     def show_marker(self):
         self.pub.publish(self.marker)
         rospy.sleep(0.5)
-
-
-
 
 
 # ------------------ End Class Definitions --------------------
@@ -386,7 +383,7 @@ def make_grid_converter(grid_vars):
     base = Point()
     base.x = grid_vars[0]
     base.y = grid_vars[1]
-    base.z = 0 # Not used, but converter may require it to exist
+    base.z = 0 # Used for the RVIZ marker
     maximum = Point()
     maximum.x = grid_vars[2]
     maximum.y = grid_vars[3]
@@ -400,10 +397,6 @@ def show_converter(controller):
     cart.z = 0
     print("You are now in State: {}".format(grid_converter.cart2state(cart)))
 
-def make_user_wait():
-    data = raw_input("Enter exit to exit\n")
-    if data == 'exit':
-        sys.exit()
 
 
 def get_visible_points_circle(center, radius):
@@ -479,6 +472,11 @@ def make_array(scan, vis, occl, array_shape):
 
     return a
 
+def make_user_wait(msg="Enter exit to exit"):
+    data = raw_input(msg + "\n")
+    if data == 'exit':
+        sys.exit()
+
 # ------------------ End Function Definitions -----------------
 
 if __name__ == '__main__':
@@ -486,23 +484,38 @@ if __name__ == '__main__':
     wait_for_time()
 
     # Some values to use for the Grid class that does conversions
-    base_x = -5
-    base_y = -5
-    max_x = 5
-    max_y = 5
-    nb_y = 10
-    nb_x = 10
+    base_x = -6
+    base_y = -4
+    max_x = 6
+    max_y = 4
+    nb_y = 8
+    nb_x = 12
     shape = (nb_y,nb_x)
 
-    # Set up vars and create objects
+    # make_user_wait('Press enter to start')
+
+    # Create velocity controller and converter objects
     vel_controller = VelocityController('/odom', '/cmd_vel')
     grid_vars = [base_x, base_y, max_x, max_y, nb_x, nb_y]
     grid_converter = make_grid_converter(grid_vars)
+
+    # Set up and initialize RVIZ marker objects
+    cm = ColorMixer('red', 'green')
+    belief_marker = BeliefMarker()
+    l = np.arange(0,nb_x*nb_y) # Specific to size of state space
+    for item in l:
+        p = grid_converter.state2cart(item)
+        p.z = -0.05
+        belief_marker.marker.points.append(p)
+        belief_marker.marker.colors.append(ColorRGBA(0.0,0.0,0.0,1.0))
+
+    belief_marker.show_marker()
+    # Create scanner
     scanner = Scanner('/scan', grid_converter)
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
-
-    init_point = Point(0.5, 0.5, None)
+    # Set initial point
+    init_point = grid_converter.state2cart(0)
     vel_controller.go_to_point(init_point)
 
 
@@ -648,12 +661,23 @@ if __name__ == '__main__':
                     raise NameError("Given value in the Lidar output is unaccepted")
             visit_freq = copy.deepcopy(visit_freq_next)
 
-            # ----------------- Q --------------------------------------- 
+            # ----------------- Q ---------------------------------------
+            ''' Set marker color based on belief '''
+            belief_marker.marker.colors = []
+            for s in model.states:
+                print(next_label_belief[s,0])
+                cn = cm.get_color_norm(model.label_belief[s,0])
+                belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+            belief_marker.show_marker()
+            rospy.sleep(0.25)
+            # ----------------- Q ---------------------------------------
+
+            # ----------------- Q ---------------------------------------
             # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
             direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
             move_TB(vel_controller, direction[action_hist[1][-1]])
             # make_user_wait()
-            # ----------------- Q --------------------------------------- 
+            # ----------------- Q ---------------------------------------
 
             # divergence test on belief
             if div_test_flag:
