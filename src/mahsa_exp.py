@@ -24,6 +24,10 @@ from grid_state_converter import *
 import copy
 import random
 from partial_semantics import *
+# Rviz
+from visualization_msgs.msg import Marker
+from std_msgs.msg import ColorRGBA
+from geometry_msgs.msg import Quaternion, Vector3
 
 
 # ------------------ Start Class Definitions ------------------
@@ -153,77 +157,6 @@ class VelocityController:
             self.cmd_vel_pub.publish(self.vel_cmd)
             self.r.sleep()
 
-# ------------------ Start of old PID loop ------------------
-
-        # ''' Then use a PID that controls the cmd velocity and drives the distance error to zero '''
-        # error_x = goal.x - self.x
-        # error_y = goal.y - self.y
-        # angle_to_goal = np.arctan2(error_y, error_x)
-        # last_rotation = 0
-        # goal_distance = np.sqrt(error_x**2 + error_y**2)
-        # distance = goal_distance
-        # previous_distance = 0
-        # total_distance = 0
-        # previous_angle = 0
-        # total_angle = 0
-
-        # kp_distance = 1
-        # ki_distance = 0.1
-        # kd_distance = 0.1
-
-        # kp_angle = 1
-        # ki_angle = 0.1
-        # kd_angle = 0.1
-
-        # if self.debug:
-        #     print("Starting the PID")
-
-        # while distance > 0.05:
-        #     y_start = self.y
-        #     x_start = self.x
-        #     rotation = self.yaw
-        #     error_x = goal.x - x_start
-        #     error_y = goal.y - y_start
-        #     angle_to_goal = np.arctan2(error_y, error_x)
-        #     if self.debug:
-        #         print("BEFORE -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
-        #     if angle_to_goal < -np.pi/4 or angle_to_goal > np.pi/4:
-        #         if goal.y < 0 and y_start < goal.y:
-        #             angle_to_goal = -2*np.pi + angle_to_goal
-        #         elif goal.y >= 0 and y_start > goal.y:
-        #             angle_to_goal = 2*np.pi + angle_to_goal
-        #     if last_rotation > np.pi - 0.1 and rotation <= 0:
-        #         rotation = 2*np.pi + rotation
-        #     elif last_rotation < -np.pi + 0.1 and rotation > 0:
-        #         rotation = -2*np.pi + rotation
-        #     if self.debug:
-        #         print("AFTER -- goal_z: {:.5f},  rotation: {:.5f}".format(angle_to_goal, rotation))
-        #     diff_angle = angle_to_goal - previous_angle
-        #     diff_distance = distance - previous_distance
-
-        #     distance = np.sqrt(error_x**2 + error_y**2)
-
-        #     control_signal_distance = kp_distance*distance + ki_distance*total_distance + kd_distance*diff_distance
-
-        #     control_signal_angle = kp_angle*angle_to_goal + ki_angle*total_angle + kd_angle*diff_angle
-
-        #     self.vel_cmd.angular.z = control_signal_angle - rotation
-        #     self.vel_cmd.linear.x = np.minimum(control_signal_distance, 0.1)
-
-        #     if self.vel_cmd.angular.z > 0:
-        #         self.vel_cmd.angular.z = np.minimum(self.vel_cmd.angular.z, 1.0)
-        #     else:
-        #         self.vel_cmd.angular.z = np.maximum(self.vel_cmd.angular.z, -1.0)
-
-        #     last_rotation = rotation
-        #     self.cmd_vel_pub.publish(self.vel_cmd)
-        #     previous_distance = distance
-        #     previous_angle = angle_to_goal
-        #     total_distance = total_distance + distance
-        #     self.r.sleep()
-
-# ------------------ End of old PID loop ------------------
-
         # Stop motion
         self.cmd_vel_pub.publish(Twist())
         if self.debug:
@@ -300,9 +233,84 @@ class Scanner(Scan):
         transform = self.tf_buffer.lookup_transform(to_frame, from_frame, rospy.Time(0), rospy.Duration(1.0))
         return tf2_geometry_msgs.do_transform_pose(p1, transform)
 
+
+class ColorMixer(object):
+    ''' Finds the color mix between two colors.
+        color_0 and color_1 are chosen from:
+            {'red', 'green', 'blue'}. '''
+    def __init__(self, color_0, color_1):
+        colors = ('red', 'green', 'blue')
+        if not color_0 in colors or not color_1 in colors:
+            rospy.logerr("Choose a color from ('red', 'green', 'blue')")
+            sys.exit()
+
+        self._c0 = self.__determine_input(color_0)
+        self._c1 = self.__determine_input(color_1)
+        self.last_c = []
+
+    ''' Input is a double on [0-1] where:
+        0 maps to c_0 = 255 and c_1 = 0,
+        1 maps to c_0 = 0 and c_1 = 255. '''
+    def __determine_input(self, color):
+        if color == 'red':
+            return [255, 0, 0]
+        elif color == 'green':
+            return [0, 255, 0]
+        elif color == 'blue':
+            return [0, 0, 255]
+        else:
+            rospy.logerr("Choose a color from ('red', 'green', 'blue')")
+            sys.exit()
+
+    def __check_mixing_value(self, val):
+        if not (0 <= val <= 1):
+            rospy.logerr("get_color value must be between [0-1]")
+            sys.exit()
+
+    def get_color(self, val):
+        self.__check_mixing_value(val)
+        self.last_c = [val*(self._c1[j] - self._c0[j]) + self._c0[j] for j in range(3)]
+        return self.last_c
+
+    def get_color_norm(self, val):
+        self.__check_mixing_value(val)
+        self.last_c = [val*(self._c1[j] - self._c0[j]) + self._c0[j] for j in range(3)]
+        self.last_c[:] = [x/255 for x in self.last_c]
+        return self.last_c
+
+
+class BeliefMarker(object):
+    def __init__(self):
+        self.pub = rospy.Publisher('visualization_marker', Marker, queue_size=5)
+        rospy.sleep(0.5)
+        self.marker = Marker()
+        self.marker.header.frame_id = 'map' # Change to odom for experiment
+        self.marker.header.stamp = rospy.get_rostime()
+        self.marker.id = 0
+        self.marker.type = Marker.CUBE_LIST
+        # self.marker.action = Marker.ADD
+        self.marker.points = [Point(0,0,0), Point(2,2,0)]
+        self.marker.pose.orientation = Quaternion(0,0,0,1)
+        self.marker.scale = Vector3(1,1,0.1)
+        self.marker.colors = [ColorRGBA(0.0,0.5,0.0,1.0),ColorRGBA(0.5,0.0,0.0,1.0)]
+        self.marker.lifetime = rospy.Duration(0)
+
+    def show_marker(self):
+        self.pub.publish(self.marker)
+        rospy.sleep(0.5)
+
+
+
+
+
 # ------------------ End Class Definitions --------------------
 
 # ------------------ Start Function Definitions ---------------
+
+def wait_for_time():
+    """Wait for simulated time to begin """
+    while rospy.Time().now().to_sec() == 0:
+        pass
 
 def get_direction_from_key_stroke():
     while(True):
@@ -475,6 +483,7 @@ def make_array(scan, vis, occl, array_shape):
 
 if __name__ == '__main__':
     rospy.init_node("velocity_controller")
+    wait_for_time()
 
     # Some values to use for the Grid class that does conversions
     base_x = -5
@@ -512,10 +521,12 @@ if __name__ == '__main__':
 
         # create problem setting
         model = MDP('gridworld')
-        model.semantic_representation(prior_belief='noisy-ind') # changed for scenario 2
+        # model.semantic_representation(prior_belief='noisy-ind') # Use for actual run
+        model.semantic_representation(prior_belief='exact') # Just for testing
         perc_flag = True
         bayes_flag = True
-        replan_flag = True
+        # replan_flag = True   # For actual run
+        replan_flag = False # For test
         div_test_flag = True
         act_info_flag = True
         spec_true = [[],[]]
@@ -533,7 +544,7 @@ if __name__ == '__main__':
         term_flag = False
         task_flag = False
         timestep = 0
-        max_timestep = 250
+        max_timestep = 50 # Increase if agent does not reach goal
         plan_count = 0
         div_thresh = 0.001
         n_sample = 10
