@@ -373,6 +373,15 @@ class MDP:
                 self.label_belief = 0.5 * np.ones((len(self.states),len(self.properties)),
                                                   dtype=np.float64)
 
+            elif prior_belief == 'random-obs':  
+                self.label_belief[:,0] = 0.5 * np.ones(len(self.states),
+                                                  dtype=np.float64)
+                for state in self.states:
+                    if self.label_true[state,1]:
+                        self.label_belief[state,1] = 1
+                    else:
+                        self.label_belief[state,1] = 0
+
             elif prior_belief == 'noisy-ind':
                 noise = 0.25
                 for state in self.states:
