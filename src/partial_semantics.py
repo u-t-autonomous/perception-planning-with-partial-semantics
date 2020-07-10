@@ -262,7 +262,7 @@ class MDP:
             raise NameError("Given problem type has no defined action effect")
 
 
-    def gridworld_2D(self, dim=(10,10), p_correctmove=0.85, init_state=0):
+    def gridworld_2D(self, dim=(12,8), p_correctmove=0.95, init_state=0):
         """Create an MDP for navigation in a 2D gridworld"""
 
         self.dim = dim # dimensions (d1, d2) of the state space
@@ -330,7 +330,7 @@ class MDP:
 #                # random obstacles
 #                n_obstacle = 10
 #                obstacle_pos = np.random.randint(0,len(self.states),n_obstacle)
-                obstacle_pos = [65,66,67,68,69,70]
+                obstacle_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
                                 # 102,103,104,105,106,107,
                                 # 139,140,141,142,143,144,
                                 # 160,161,162,163,164,165,166,167,168,169,170,171,172,176,177,178,179,180,181,
@@ -361,7 +361,7 @@ class MDP:
                 #               504,505,506,507,
                 #               541,542,543,544,
                 #               578,579,580,581]
-                target_pos = [99]
+                target_pos = [95]
                 self.label_true[target_pos,1] = 1
 
             self.label_belief = np.zeros((len(self.states),len(self.properties)),
