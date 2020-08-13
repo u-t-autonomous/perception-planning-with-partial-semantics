@@ -262,7 +262,7 @@ class MDP:
             raise NameError("Given problem type has no defined action effect")
 
 
-    def gridworld_2D(self, dim=(12,8), p_correctmove=0.95, init_state=0):
+    def gridworld_2D(self, dim=(8,12), p_correctmove=0.95, init_state=0):
         """Create an MDP for navigation in a 2D gridworld"""
 
         self.dim = dim # dimensions (d1, d2) of the state space
@@ -374,7 +374,7 @@ class MDP:
                                                   dtype=np.float64)
 
             elif prior_belief == 'random-obs':  
-                self.label_belief[:,0] = 0.5 * np.ones(len(self.states),
+                self.label_belief[:,0] = 0.05 * np.ones(len(self.states),
                                                   dtype=np.float64)
                 for state in self.states:
                     if self.label_true[state,1]:
@@ -716,8 +716,8 @@ def estimate_AP(label_dist, method='mode'):
                     label_est[i_s,i_p] = False
 
     elif method == 'risk-averse':
-        thresh_good = 0.5 # higher --> less willing to go to a potential good state
-        thresh_bad = 0.3 # higher --> more willing to go to a potential bad state
+        thresh_good = 0.75 # higher --> less willing to go to a potential good state
+        thresh_bad = 0.35 # higher --> more willing to go to a potential bad state
 
         for i_s,s in enumerate(label_est):
             # needs adjustment for specifications beyond reach-avoid
@@ -742,7 +742,7 @@ def simulation(model, spec, perc_flag=False, bayes_flag=False,
     term_flag = False
     task_flag = False
     timestep = 0
-    max_timestep = 50
+    max_timestep = 100
     plan_count = 0
     div_thresh = 0.001
     n_sample = 10

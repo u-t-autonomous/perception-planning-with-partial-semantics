@@ -54,7 +54,7 @@ class VelocityController:
     def go_to_point(self, goal):
         # input variable goal should be of type geometry_msgs/Point
 
-        print("Starting to head towards the goal")
+        print("Starting to head towards the waypoint")
 
         ''' First do the rotation towards the goal '''
         error_x = goal.x - self.x
@@ -63,7 +63,7 @@ class VelocityController:
         angle_error = self.yaw - angle_to_goal
 
         if self.debug:
-            print("Starting to rotate towards goal")
+            print("Starting to rotate towards waypoint")
 
         while abs(angle_error) > 0.05:
             ''' Only useful if there is some slip/slide of the turtlebot while rotating '''
@@ -113,11 +113,11 @@ class VelocityController:
 
         kp_distance = 1
         ki_distance = 0.1
-        kd_distance = 0.1
+        kd_distance = 1
 
         kp_angle = 1
         ki_angle = 0.1
-        kd_angle = 0.1
+        kd_angle = 1
 
         if self.debug:
             print("Starting the PID")
@@ -142,14 +142,14 @@ class VelocityController:
 
             if angle_to_goal >= 0:
                 if self.yaw <= angle_to_goal and self.yaw >= angle_to_goal - np.pi:
-                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.3)
+                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.4)
                 else:
-                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.3)
+                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.4)
             else:
                 if self.yaw <= angle_to_goal + np.pi and self.yaw > angle_to_goal:
-                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.3)
+                    self.vel_cmd.angular.z = -np.minimum(abs(control_signal_angle), 0.4)
                 else:
-                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.3)
+                    self.vel_cmd.angular.z = np.minimum(abs(control_signal_angle), 0.4)
 
             previous_distance_error = distance_error
             previous_angle_error = angle_error
@@ -163,7 +163,7 @@ class VelocityController:
             print("Stopping PID")
             print("Position is currently: ({:.5f},{:.5f})    Yaw is currently: [{:.5f}]".format(self.x, self.y, self.yaw))
 
-        print("** Goal Reached **")
+        print("** Waypoint Reached **")
 
 class Scan(object):
     ''' Scan object that holds the laser scan and point cloud of the input topic '''
@@ -334,22 +334,23 @@ def get_direction_from_key_stroke():
         else:
             print("You must enter a valid command {a = left, w = up , s = down, d = right, h = hold, k = exit}")
 
-def next_waypoint_from_direction(direction, current_pose):
+def next_waypoint_from_direction(direction, current_pose, move_distance=1):
     """ Changes in x are from Left/Right action.
         CHanges in y are from Up/Down action.
-        Set the next wp to the center of 1x1 cells (i.e x=1.5, y=1.5).
+        Sets the next wp to the center of 1x1 cells (i.e x=1.5, y=1.5).
         Error logging uses ROS.
-        direction is a string. current_pose is a Point object """
+        direction is a string. current_pose is a Point object
+        move_distance represents the length of each square cell """
 
     wp = Point(current_pose.x, current_pose.y, None)
     if direction == 'up':
-        wp.y = np.ceil(wp.y) + 0.5
+        wp.y = np.ceil(wp.y) + move_distance/2.0
     elif direction == 'down':
-        wp.y = np.floor(wp.y) - 0.5
+        wp.y = np.floor(wp.y) - move_distance/2.0
     elif direction == 'left':
-        wp.x = np.floor(wp.x) - 0.5
+        wp.x = np.floor(wp.x) - move_distance/2.0
     elif direction == 'right':
-        wp.x = np.ceil(wp.x) + 0.5
+        wp.x = np.ceil(wp.x) + move_distance/2.0
     else:
         err_msg = "The direction value {} is not valid".format(direction)
         rospy.logerr(err_msg)
@@ -365,7 +366,7 @@ def move_TB_keyboard(controller_object):
     if dir_val == 'hold':
         print("* You chose to hold *")
     else:
-        wp = next_waypoint_from_direction(dir_val, pose)
+        wp = next_waypoint_from_direction(dir_val, pose, move_distance=0.3048)
         controller_object.go_to_point(wp)
 
 def move_TB(controller_object, dir_val):
@@ -375,7 +376,7 @@ def move_TB(controller_object, dir_val):
     if dir_val == 'hold':
         print("* You chose to hold *")
     else:
-        wp = next_waypoint_from_direction(dir_val, pose)
+        wp = next_waypoint_from_direction(dir_val, pose, move_distance=0.3048)
         controller_object.go_to_point(wp)
 
 def make_grid_converter(grid_vars):
@@ -483,12 +484,15 @@ if __name__ == '__main__':
     rospy.init_node("velocity_controller")
     wait_for_time()
 
+    # # We use foam pads that are a foot in length
+    feet = 0.3048
+
     # Some values to use for the Grid class that does conversions
     base_x = -6
     base_y = -4
     max_x = 6
     max_y = 4
-    nb_y = 8
+    nb_y = 7
     nb_x = 12
     shape = (nb_y,nb_x)
 
@@ -499,221 +503,79 @@ if __name__ == '__main__':
     grid_vars = [base_x, base_y, max_x, max_y, nb_x, nb_y]
     grid_converter = make_grid_converter(grid_vars)
 
-    # Set up and initialize RVIZ marker objects
-    cm = ColorMixer('red', 'green')
-    belief_marker = BeliefMarker()
-    l = np.arange(0,nb_x*nb_y) # Specific to size of state space
-    for item in l:
-        p = grid_converter.state2cart(item)
-        p.z = -0.05
-        belief_marker.marker.points.append(p)
-        belief_marker.marker.colors.append(ColorRGBA(0.0,0.0,0.0,1.0))
+    # # Set up and initialize RVIZ marker objects
+    # cm = ColorMixer('green', 'red')
+    # belief_marker = BeliefMarker()
+    # l = np.arange(0,nb_x*nb_y) # Specific to size of state space
+    # for item in l:
+    #     p = grid_converter.state2cart(item)
+    #     p.z = -0.05
+    #     belief_marker.marker.points.append(p)
+    #     belief_marker.marker.colors.append(ColorRGBA(0.0,0.0,0.0,1.0))
+    # belief_marker.show_marker()
 
-    belief_marker.show_marker()
     # Create scanner
     scanner = Scanner('/scan', grid_converter)
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
-    # Set initial point
-    init_point = grid_converter.state2cart(0)
+    # # Set initial point
+    # init_point = grid_converter.state2cart(0)
+    # vel_controller.go_to_point(init_point)
+
+
+
+
+    # # ----------------- Q --------------------------------------- 
+    # # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
+    scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+    vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+    occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+    lid = make_array(scan_states, vis_states, occluded_states, shape)
+    print(lid)
+    # # ----------------- Q ---------------------------------------
+
+    # # ----------------- Q ---------------------------------------
+    # ''' Set marker color based on belief '''
+    # belief_marker.marker.colors = []
+    # for s in model.states:
+    #     # print(next_label_belief[s,0])
+    #     cn = cm.get_color_norm(model.label_belief[s,0])
+    #     belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+    # belief_marker.show_marker()
+    # rospy.sleep(0.25)
+    # # ----------------- Q ---------------------------------------
+
+    # # ----------------- Q ---------------------------------------
+    # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+    # direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+    # print(action_hist[1][-1])
+    # print(direction[action_hist[1][-1]])
+    # print(state_hist[-1])
+    # move_TB(vel_controller, direction[action_hist[1][-1]])
+    # # make_user_wait()
+    # # ----------------- Q ---------------------------------------
+
+    # # Some initial point to show to use the controller
+    init_point = Point(0.5, 0.0, None)
     vel_controller.go_to_point(init_point)
 
+    make_user_wait()
 
-    ############  The following is the code from Mahsa that runs her algorithm  ############
+    while True:
+        # # Ask the user for a cardinal direction to move the robot, and then move it
+        move_TB_keyboard(vel_controller)
 
+        # # Show how the converter can be used
+        # show_converter(vel_controller)
 
-    # define simulation parameters
-    n_iter = 1
-    infqual_hist_all = []
-    risk_hist_all = []
-    timestep_all = []
-    plan_count_all = []
-    task_flag_all = []
+        # # Show how to convert scan to grid point and find states that are out of range
+        scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+        vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+        occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+        array = make_array(scan_states, vis_states, occluded_states, shape)
+        print(array)
 
-    for iter in range(n_iter):
-
-        # create problem setting
-        model = MDP('gridworld')
-        # model.semantic_representation(prior_belief='noisy-ind') # Use for actual run
-        model.semantic_representation(prior_belief='exact') # Just for testing
-        perc_flag = True
-        bayes_flag = True
-        # replan_flag = True   # For actual run
-        replan_flag = False # For test
-        div_test_flag = True
-        act_info_flag = True
-        spec_true = [[],[]]
-        for s in range(len(model.states)):
-            if model.label_true[s,0] == True:
-                spec_true[0].append(s)
-            if model.label_true[s,1] == True:
-                spec_true[1].append(s)
-
-        visit_freq = np.ones(len(model.states))
-
-    ##############################################################################
-
-        # simulation results
-        term_flag = False
-        task_flag = False
-        timestep = 0
-        max_timestep = 50 # Increase if agent does not reach goal
-        plan_count = 0
-        div_thresh = 0.001
-        n_sample = 10
-        risk_thresh = 0.1
-        state_hist = []
-        state_hist.append(model.init_state)
-        action_hist = [[],[]] # [[chosen action],[taken action]]
-        infqual_hist = []
-        infqual_hist.append(info_qual(model.label_belief))
-        risk_hist = []
-
-        while not term_flag:
-
-            if perc_flag:
-                # estimate map
-                label_est = estimate_AP(model.label_belief, method='risk-averse')
-                spec_est = [[],[]]
-                for s in range(len(model.states)):
-                    if label_est[s,0] == True:
-                        spec_est[0].append(s)
-                    if label_est[s,1] == True:
-                        spec_est[1].append(s)
-                # print("obstacle:   ",spec_est[0])
-                # print("target:     ",spec_est[1])
-
-            if replan_flag or (not replan_flag and plan_count==0):
-                # find an optimal policy
-                (vars_val, opt_policy) = verifier(copy.deepcopy(model), spec_est)
-                # print(opt_policy[0:20])
-                plan_count += 1
-
-            if act_info_flag:
-                # risk evaluation
-                prob_sat = stat_verifier(model,state_hist[-1],opt_policy,spec_est,n_sample)
-                risk = np.abs(vars_val[state_hist[-1]] - prob_sat); print(vars_val[state_hist[-1]],prob_sat)
-                risk_hist.append(risk)
-                print("Risk due to Perception Uncertainty:   ",risk)
-
-                # perception policy
-                if risk > risk_thresh:
-                    # implement perception policy
-                    timestep += 1
-                    state = state_hist[-1]
-                    action = 0
-                else:
-                    pass
-            timestep += 1
-            print("Timestep:   ",timestep)
-            state = state_hist[-1]
-            opt_act = opt_policy[state]
-            if 0 in opt_act and len(opt_act)>1:
-                opt_act = opt_act[1:]
-
-            action = np.random.choice(opt_act)
-
-            action_hist[0].append(action)
-            next_state = np.random.choice(model.states, p=model.transitions[state,action])
-            # identify taken action
-            for a in model.actions[model.enabled_actions[state]]:
-                if model.action_effect(state,a)[0] == next_state:
-                    action_taken = a
-            action_hist[1].append(action_taken)
-            state_hist.append(next_state)
-
-    ############################################################################## uncommented for scenario 2
-            # get new information
-            # (obs,p_obs_model) = obs_modeling(model)
-            #
-            # # update belief
-            # next_label_belief = belief_update(model.label_belief, obs,
-            #                                  p_obs_model, bayes_flag)
-
-    ############################################################################### commented for scenario 2
-
-            # ----------------- Q --------------------------------------- 
-            # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
-            scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
-            vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-            occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-            lid = make_array(scan_states, vis_states, occluded_states, shape)
-            print(lid)
-            # ----------------- Q ---------------------------------------
-
-            lid_adapted = np.reshape(lid, len(model.states))
-            # update belief
-            next_label_belief = copy.deepcopy(model.label_belief)
-            visit_freq_next = copy.deepcopy(visit_freq) + 1
-            for s in model.states:
-                # update frequency
-                if lid_adapted[s] == -1:
-                    visit_freq_next[s] -= 1
-                elif lid_adapted[s] == 0:
-                    pass
-                # update for 'obstacle'
-                elif lid_adapted[s] == 1:
-                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
-                # # update for 'target'
-                # elif lid_adapted[s] == 2:
-                #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
-                else:
-                    raise NameError("Given value in the Lidar output is unaccepted")
-            visit_freq = copy.deepcopy(visit_freq_next)
-
-            # ----------------- Q ---------------------------------------
-            ''' Set marker color based on belief '''
-            belief_marker.marker.colors = []
-            for s in model.states:
-                print(next_label_belief[s,0])
-                cn = cm.get_color_norm(model.label_belief[s,0])
-                belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
-            belief_marker.show_marker()
-            rospy.sleep(0.25)
-            # ----------------- Q ---------------------------------------
-
-            # ----------------- Q ---------------------------------------
-            # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-            direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-            move_TB(vel_controller, direction[action_hist[1][-1]])
-            # make_user_wait()
-            # ----------------- Q ---------------------------------------
-
-            # divergence test on belief
-            if div_test_flag:
-                div = info_div(model.label_belief,next_label_belief)
-                print("Belief Divergence:   ",div)
-                if info_div(model.label_belief,next_label_belief) > div_thresh:
-                    replan_flag = True
-                else:
-                    replan_flag = False
-            model.label_belief = np.copy(next_label_belief)
-            infqual_hist.append(info_qual(model.label_belief))
-
-            # check task realization
-            if model.label_true[state_hist[-1],0] == True:
-                term_flag = True
-                print("at a state with an obstacle")
-
-            if model.label_true[state_hist[-1],1] == True:
-                task_flag = True
-                term_flag = True
-                print("at a target state")
-
-            if timestep == max_timestep:
-                term_flag = True
-                print("timestep exceeded the maximum limit")
-
-        print("Number of Time Steps:   ",timestep)
-        print("Number of Replanning:   ",plan_count)
-
-        infqual_hist_all.append(infqual_hist)
-        risk_hist_all.append(risk_hist)
-        timestep_all.append(timestep)
-        plan_count_all.append(plan_count)
-        task_flag_all.append(int(task_flag))
-
-    task_rate = np.mean(task_flag_all)
+        make_user_wait()
 
     ########################################################################################
     # The following are examples of how to use some of the features
