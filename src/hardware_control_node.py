@@ -14,11 +14,11 @@ import types
 import tf2_ros
 import tf2_geometry_msgs
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import Twist, Point, PoseStamped
+from geometry_msgs.msg import Twist, Point, PoseStamped, PoseWithCovarianceStamped
 import laser_geometry.laser_geometry as lg
 import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import LaserScan, PointCloud2
-from tf.transformations import euler_from_quaternion
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from grid_state_converter import *
 # Imports for Algorithm side
 import copy
@@ -28,6 +28,7 @@ from partial_semantics import *
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Quaternion, Vector3
+from actionlib_msgs.msg import GoalStatusArray
 
 
 # ------------------ Start Class Definitions ------------------
@@ -37,19 +38,37 @@ class VelocityController:
     def __init__(self, odom_topic_name, cmd_vel_topic_name, debug=False):
         self.debug = debug
         self.__odom_sub = rospy.Subscriber(odom_topic_name, Odometry, self.__odomCB)
-        self.cmd_vel_pub = rospy.Publisher(cmd_vel_topic_name, Twist, queue_size = 1)
+        self.__amcl_sub = rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.__amclCB)
+        self.__goal_stat_sub = rospy.Subscriber('/move_base/status', GoalStatusArray, self.__goalStatCB)
+        self.cmd_vel_pub = rospy.Publisher(cmd_vel_topic_name, Twist, queue_size=1)
+        self.goal_pub = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=1)
 
         self.x = None
         self.y = None
         self.yaw = None
+        self.x_odom = None
+        self.y_odom = None
+        self.yaw_odom = None
+        self.heading = None
         self.r = rospy.Rate(4)
         self.vel_cmd = Twist()
+        self.goal_status = GoalStatusArray()
 
     def __odomCB(self, msg):
+        self.x_odom = msg.pose.pose.position.x
+        self.y_odom = msg.pose.pose.position.y
+        rot_q = msg.pose.pose.orientation
+        _, _, self.yaw_odom = euler_from_quaternion([rot_q.x, rot_q.y, rot_q.z, rot_q.w])
+
+    def __amclCB(self, msg):
         self.x = msg.pose.pose.position.x
         self.y = msg.pose.pose.position.y
         rot_q = msg.pose.pose.orientation
         _, _, self.yaw = euler_from_quaternion([rot_q.x, rot_q.y, rot_q.z, rot_q.w])
+
+    def __goalStatCB(self, msg):
+        self.goal_status = msg
+
 
     def go_to_point(self, goal):
         # input variable goal should be of type geometry_msgs/Point
@@ -57,10 +76,10 @@ class VelocityController:
         print("Starting to head towards the waypoint")
 
         ''' First do the rotation towards the goal '''
-        error_x = goal.x - self.x
-        error_y = goal.y - self.y
+        error_x = goal.x - self.x_odom
+        error_y = goal.y - self.y_odom
         angle_to_goal = np.arctan2(error_y, error_x)
-        angle_error = self.yaw - angle_to_goal
+        angle_error = self.yaw_odom - angle_to_goal
 
         if self.debug:
             print("Starting to rotate towards waypoint")
@@ -70,18 +89,18 @@ class VelocityController:
             # error_x = goal.x - self.x
             # error_y = goal.y - self.y
             # angle_to_goal = np.arctan2(error_y, error_x) # # #
-            angle_error = self.yaw - angle_to_goal
+            angle_error = self.yaw_odom - angle_to_goal
             if self.debug:
-                print("Angle to goal: {:.5f},   Yaw: {:.5f},   Angle error: {:.5f}".format(angle_to_goal, self.yaw, angle_error))
+                print("Angle to goal: {:.5f},   Yaw: {:.5f},   Angle error: {:.5f}".format(angle_to_goal, self.yaw_odom, angle_error))
             if angle_to_goal >= 0:
-                if self.yaw <= angle_to_goal and self.yaw >= angle_to_goal - np.pi:
+                if self.yaw_odom <= angle_to_goal and self.yaw_odom >= angle_to_goal - np.pi:
                     self.vel_cmd.linear.x = 0.0
                     self.vel_cmd.angular.z = np.minimum(abs(angle_error), 0.4)
                 else:
                     self.vel_cmd.linear.x = 0.0
                     self.vel_cmd.angular.z = -np.minimum(abs(angle_error), 0.4)
             else:
-                if self.yaw <= angle_to_goal + np.pi and self.yaw > angle_to_goal:
+                if self.yaw_odom <= angle_to_goal + np.pi and self.yaw_odom > angle_to_goal:
                     self.vel_cmd.linear.x = 0.0
                     self.vel_cmd.angular.z = -np.minimum(abs(angle_error), 0.4)
                 else:
@@ -91,7 +110,7 @@ class VelocityController:
             self.cmd_vel_pub.publish(self.vel_cmd)
             self.r.sleep()
             # Calculate angle error again before loop condition is checked
-            angle_error = self.yaw - angle_to_goal
+            angle_error = self.yaw_odom - angle_to_goal
 
         # Stop rotation
         self.cmd_vel_pub.publish(Twist())
@@ -99,7 +118,96 @@ class VelocityController:
         if self.debug:
             print("Stopping the turn")
 
-        ''' Then use a PID that controls the cmd velocity and drives the distance error to zero '''
+
+        # Move to the goal with nav stack
+        self.getHeading([goal.x, goal.y])
+        wp = PoseStamped()
+        wp.header.frame_id = 'map'
+        wp.pose.position.x = goal.x
+        wp.pose.position.y = goal.y
+        q = quaternion_from_euler(0, 0, self.heading)
+        wp.pose.orientation.x = q[0]
+        wp.pose.orientation.y = q[1]
+        wp.pose.orientation.z = q[2]
+        wp.pose.orientation.w = q[3]
+
+        # Send goal to navstack
+        goal_reached = False
+        complete_counter = 0
+        start_time = rospy.Time.now()
+        end_time = start_time + rospy.Duration(30)
+        self.goal_pub.publish(wp)
+
+        while not goal_reached:
+            # print(self.goal_status.status_list[-1].status)
+            try:
+                status_value = self.goal_status.status_list[-1].status
+            except:
+                status_value = 1
+                complete_counter = 0
+
+            if status_value == 1:
+                complete_counter = 0
+                continue
+            elif status_value == 4:
+                print("Status is 4: Waiting 2 seconds then sending the waypoiny again...")
+                rospy.sleep(2.)
+                complete_counter = 0
+                self.goal_pub.publish(wp)
+            elif status_value == 3:
+                complete_counter += 1
+                if complete_counter >= 40:
+                    goal_reached = True
+            else:
+                rospy.logwarn("Goal status is: {}".format(self.goal_status.status_list[-1].status))
+
+            if rospy.Time.now() > end_time:
+                rospy.logwarn("The goal status loop has run for 30 seconds. Setting goal_reached = True")
+                goal_reached = True
+
+        print("** Waypoint Reached **")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # goal_reached = False
+        # while not goal_reached:
+        #     try:
+        #         status_value = self.goal_status.status_list[-1].status
+        #     except:
+        #         status_value = 1
+
+        #     if status_value == 1:
+        #         continue
+        #     elif status_value == 3:
+        #         goal_reached = True
+        #     else:
+        #         rospy.logwarn("Goal status is: {}".format(self.goal_status.status_list[-1].status))
+
+        # print("** Waypoint Reached **")
+
+
+
+
+
+
+
+
+
+        ''' Then use a PID that controls the cmd velocity and drives the distance error to zero
 
         error_x = goal.x - self.x
         error_y = goal.y - self.y
@@ -162,8 +270,11 @@ class VelocityController:
         if self.debug:
             print("Stopping PID")
             print("Position is currently: ({:.5f},{:.5f})    Yaw is currently: [{:.5f}]".format(self.x, self.y, self.yaw))
+        # '''
 
-        print("** Waypoint Reached **")
+    def getHeading(self, desiredState=np.array([5.0, 5.0])):
+        relPos = desiredState - np.array([self.x, self.y])
+        self.heading = np.arctan2(relPos[1], relPos[0])
 
 class Scan(object):
     ''' Scan object that holds the laser scan and point cloud of the input topic '''
@@ -334,23 +445,22 @@ def get_direction_from_key_stroke():
         else:
             print("You must enter a valid command {a = left, w = up , s = down, d = right, h = hold, k = exit}")
 
-def next_waypoint_from_direction(direction, current_pose, move_distance=1):
+def next_waypoint_from_direction(direction, current_pose):
     """ Changes in x are from Left/Right action.
         CHanges in y are from Up/Down action.
         Sets the next wp to the center of 1x1 cells (i.e x=1.5, y=1.5).
         Error logging uses ROS.
-        direction is a string. current_pose is a Point object
-        move_distance represents the length of each square cell """
+        direction is a string. current_pose is a Point object """
 
     wp = Point(current_pose.x, current_pose.y, None)
     if direction == 'up':
-        wp.y = np.ceil(wp.y) + move_distance/2.0
+        wp.y = np.ceil(wp.y) + 0.5
     elif direction == 'down':
-        wp.y = np.floor(wp.y) - move_distance/2.0
+        wp.y = np.floor(wp.y) - 0.5
     elif direction == 'left':
-        wp.x = np.floor(wp.x) - move_distance/2.0
+        wp.x = np.floor(wp.x) - 0.5
     elif direction == 'right':
-        wp.x = np.ceil(wp.x) + move_distance/2.0
+        wp.x = np.ceil(wp.x) + 0.5
     else:
         err_msg = "The direction value {} is not valid".format(direction)
         rospy.logerr(err_msg)
@@ -358,7 +468,100 @@ def next_waypoint_from_direction(direction, current_pose, move_distance=1):
 
     return wp
 
-def move_TB_keyboard(controller_object):
+def next_waypoint_from_direction_v3(direction, current_pose, converter):
+    """ Changes in x are from Left/Right action.
+        CHanges in y are from Up/Down action.
+        Sets the next wp to a discrete state.
+        Error logging uses ROS.
+        direction is a string. current_pose is a Point object """
+
+    current_state = converter.cart2state(current_pose)
+    print("The current pose is set to: {}".format(current_pose))
+    print("The current state is set to: {}".format(current_state))
+    if direction == 'up':
+        current_state -= converter.col
+    elif direction == 'down':
+        current_state += converter.col
+    elif direction == 'left':
+        current_state -= 1
+    elif direction == 'right':
+        current_state += 1
+    else:
+        err_msg = "The direction value {} is not valid".format(direction)
+        rospy.logerr(err_msg)
+        sys.exit()
+
+    print("The goal state is now: {}".format(current_state))
+    print("The goal pose is now: {}".format(converter.state2cart(current_state)))
+    return converter.state2cart(current_state)
+
+def next_waypoint_from_direction_ft(direction, current_pose):
+    """ Changes in x are from Left/Right action.
+        CHanges in y are from Up/Down action.
+        Sets the next wp to the center of 1x1 cells (i.e x=1.5, y=1.5).
+        Error logging uses ROS.
+        direction is a string. current_pose is a Point object """
+    feet = 0.3048
+
+    wp = Point(current_pose.x/feet, current_pose.y/feet, None) #feet
+    if direction == 'up':
+        wp.y = np.ceil(wp.y)
+        if wp.y % 2 == 0:
+            wp.y += 2
+            wp.x = np.round(wp.x)
+        elif wp.y % 2 == 1:
+            wp.y += 1
+            wp.x = np.round(wp.x)
+    elif direction == 'down':
+        wp.y = np.floor(wp.y)
+        if wp.y % 2 == 0:
+            wp.y -= 2
+            wp.x = np.round(wp.x)
+        elif wp.y % 2 == 1:
+            wp.y -= 1
+            wp.x = np.round(wp.x)
+    elif direction == 'left':
+        wp.x = np.floor(wp.x)
+        if wp.x % 2 == 0:
+            wp.x -= 2
+            wp.y = np.round(wp.y)
+        elif wp.x % 2 == 1:
+            wp.x -= 1
+            wp.y = np.round(wp.y)
+    elif direction == 'right':
+        wp.x = np.ceil(wp.x)
+        if wp.x % 2 == 0:
+            wp.x += 2
+            wp.y = np.round(wp.y)
+        elif wp.x % 2 == 1:
+            wp.x += 1
+            wp.y = np.round(wp.y)
+    else:
+        err_msg = "The direction value {} is not valid".format(direction)
+        rospy.logerr(err_msg)
+        sys.exit()
+
+    wpr = Point(wp.x*feet, wp.y*feet, None)
+    return wpr
+
+    # wp = Point(current_pose.x/feet, current_pose.y/feet, None) #feet
+    # if direction == 'up':
+    #     wp.y = np.ceil(wp.y) + 0.5
+    # elif direction == 'down':
+    #     wp.y = np.floor(wp.y) - 0.5
+    # elif direction == 'left':
+    #     wp.x = np.floor(wp.x) - 0.5
+    # elif direction == 'right':
+    #     wp.x = np.ceil(wp.x) + 0.5
+    # else:
+    #     err_msg = "The direction value {} is not valid".format(direction)
+    #     rospy.logerr(err_msg)
+    #     sys.exit()
+
+    # wpr = Point(wp.x*feet, wp.y*feet, None)
+    # return wpr
+
+def move_TB_keyboard(controller_object, converter):
     """ Function to wrap up the process of moving the turtlebot via key strokes.
         Requires ROS to be running and a controller object """
     pose = Point(controller_object.x, controller_object.y, None)
@@ -366,7 +569,7 @@ def move_TB_keyboard(controller_object):
     if dir_val == 'hold':
         print("* You chose to hold *")
     else:
-        wp = next_waypoint_from_direction(dir_val, pose, move_distance=0.3048)
+        wp = next_waypoint_from_direction_v3(dir_val, pose, converter)
         controller_object.go_to_point(wp)
 
 def move_TB(controller_object, dir_val):
@@ -376,7 +579,7 @@ def move_TB(controller_object, dir_val):
     if dir_val == 'hold':
         print("* You chose to hold *")
     else:
-        wp = next_waypoint_from_direction(dir_val, pose, move_distance=0.3048)
+        wp = next_waypoint_from_direction_v3(dir_val, pose, converter)
         controller_object.go_to_point(wp)
 
 def make_grid_converter(grid_vars):
@@ -484,17 +687,32 @@ if __name__ == '__main__':
     rospy.init_node("velocity_controller")
     wait_for_time()
 
-    # # We use foam pads that are a foot in length
-    feet = 0.3048
-
-    # Some values to use for the Grid class that does conversions
-    base_x = -6
-    base_y = -4
-    max_x = 6
-    max_y = 4
-    nb_y = 7
-    nb_x = 12
+    # Some values to use for the Grid class that does conversions (Meters)
+    base_x = -0.25
+    base_y = -0.25
+    max_x = 3.1
+    max_y = 1.9
+    nb_y = 4
+    nb_x = 6
     shape = (nb_y,nb_x)
+
+    # # Some values to use for the Grid class that does conversions (Meters)
+    # base_x = -0.15
+    # base_y = -0.15
+    # max_x = 3.25
+    # max_y = 2.3
+    # nb_y = 8
+    # nb_x = 12
+    # shape = (nb_y,nb_x)
+
+    # # Some values to use for the Grid class that does conversions (Meters)
+    # base_x = -feet
+    # base_y = -feet
+    # max_x = (12*feet - feet)
+    # max_y = (8*feet - feet)
+    # nb_y = 4
+    # nb_x = 6
+    # shape = (nb_y,nb_x)
 
     # make_user_wait('Press enter to start')
 
@@ -503,16 +721,16 @@ if __name__ == '__main__':
     grid_vars = [base_x, base_y, max_x, max_y, nb_x, nb_y]
     grid_converter = make_grid_converter(grid_vars)
 
-    # # Set up and initialize RVIZ marker objects
-    # cm = ColorMixer('green', 'red')
-    # belief_marker = BeliefMarker()
-    # l = np.arange(0,nb_x*nb_y) # Specific to size of state space
-    # for item in l:
-    #     p = grid_converter.state2cart(item)
-    #     p.z = -0.05
-    #     belief_marker.marker.points.append(p)
-    #     belief_marker.marker.colors.append(ColorRGBA(0.0,0.0,0.0,1.0))
-    # belief_marker.show_marker()
+    # Set up and initialize RVIZ marker objects
+    cm = ColorMixer('green', 'red')
+    belief_marker = BeliefMarker()
+    l = np.arange(0,nb_x*nb_y) # Specific to size of state space
+    for item in l:
+        p = grid_converter.state2cart(item)
+        p.z = -0.05
+        belief_marker.marker.points.append(p)
+        belief_marker.marker.colors.append(ColorRGBA(0.0,0.0,0.0,1.0))
+    belief_marker.show_marker()
 
     # Create scanner
     scanner = Scanner('/scan', grid_converter)
@@ -545,6 +763,17 @@ if __name__ == '__main__':
     # rospy.sleep(0.25)
     # # ----------------- Q ---------------------------------------
 
+    belief_marker.marker.colors = []
+    for r in lid:
+        for s in r:
+            if s != 0:
+                cn = cm.get_color_norm(0)
+            else:
+                cn = cm.get_color_norm(1)
+            belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+    belief_marker.show_marker()
+    rospy.sleep(0.25)
+
     # # ----------------- Q ---------------------------------------
     # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
     # direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
@@ -556,14 +785,14 @@ if __name__ == '__main__':
     # # ----------------- Q ---------------------------------------
 
     # # Some initial point to show to use the controller
-    init_point = Point(0.5, 0.0, None)
-    vel_controller.go_to_point(init_point)
+    # init_point = Point(0.5, 0.0, None)
+    # vel_controller.go_to_point(init_point)
 
-    make_user_wait()
+    make_user_wait("Press Enter to Start")
 
     while True:
         # # Ask the user for a cardinal direction to move the robot, and then move it
-        move_TB_keyboard(vel_controller)
+        move_TB_keyboard(vel_controller, grid_converter)
 
         # # Show how the converter can be used
         # show_converter(vel_controller)

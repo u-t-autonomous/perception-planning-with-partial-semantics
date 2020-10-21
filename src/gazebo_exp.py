@@ -3,7 +3,7 @@
 """
     Description:    Velocity controller node for experiment with Mahsa
     Author:         Jesse Quattrociocchi
-    Created:        May-July 2019
+    Created:        May-July 2020
 """
 
 # Imports for ROS side
