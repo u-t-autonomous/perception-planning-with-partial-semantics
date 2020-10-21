@@ -392,7 +392,7 @@ def next_waypoint_from_direction_v3(direction, current_pose, converter):
 
 def next_waypoint_from_direction_ft(direction, current_pose):
     """ Changes in x are from Left/Right action.
-        CHanges in y are from Up/Down action.
+        Changes in y are from Up/Down action.
         Sets the next wp to the center of 1x1 cells (i.e x=1.5, y=1.5).
         Error logging uses ROS.
         direction is a string. current_pose is a Point object """
@@ -438,23 +438,6 @@ def next_waypoint_from_direction_ft(direction, current_pose):
 
     wpr = Point(wp.x*feet, wp.y*feet, None)
     return wpr
-
-    # wp = Point(current_pose.x/feet, current_pose.y/feet, None) #feet
-    # if direction == 'up':
-    #     wp.y = np.ceil(wp.y) + 0.5
-    # elif direction == 'down':
-    #     wp.y = np.floor(wp.y) - 0.5
-    # elif direction == 'left':
-    #     wp.x = np.floor(wp.x) - 0.5
-    # elif direction == 'right':
-    #     wp.x = np.ceil(wp.x) + 0.5
-    # else:
-    #     err_msg = "The direction value {} is not valid".format(direction)
-    #     rospy.logerr(err_msg)
-    #     sys.exit()
-
-    # wpr = Point(wp.x*feet, wp.y*feet, None)
-    # return wpr
 
 def move_TB_keyboard(controller_object, converter):
     """ Function to wrap up the process of moving the turtlebot via key strokes.
