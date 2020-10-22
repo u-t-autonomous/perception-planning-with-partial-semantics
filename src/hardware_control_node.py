@@ -137,9 +137,18 @@ class VelocityController:
         start_time = rospy.Time.now()
         end_time = start_time + rospy.Duration(30)
         self.goal_pub.publish(wp)
+        # count = 0
 
         while not goal_reached:
-            # print(self.goal_status.status_list[-1].status)
+            # count += 1
+            # try:
+            #     if count < 10:
+            #         print(self.goal_status.status_list[-1].status)
+            # except:
+            #     print("Not printing the status")
+            #     count = 0
+
+
             try:
                 status_value = self.goal_status.status_list[-1].status
             except:
@@ -156,7 +165,7 @@ class VelocityController:
                 self.goal_pub.publish(wp)
             elif status_value == 3:
                 complete_counter += 1
-                if complete_counter >= 40:
+                if complete_counter >= 80:
                     goal_reached = True
             else:
                 rospy.logwarn("Goal status is: {}".format(self.goal_status.status_list[-1].status))
@@ -570,7 +579,7 @@ if __name__ == '__main__':
     # Some values to use for the Grid class that does conversions (Meters)
     base_x = -0.25
     base_y = -0.3
-    max_x = 3.15
+    max_x = 3.1
     max_y = 1.9
     nb_y = 4
     nb_x = 6
@@ -616,43 +625,9 @@ if __name__ == '__main__':
     scanner = Scanner('/scan', grid_converter)
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
-    # # Set initial point
-    # init_point = grid_converter.state2cart(0)
-    # vel_controller.go_to_point(init_point)
 
 
 
-    # # ----------------- Q --------------------------------------- 
-    # # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
-    scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
-    vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-    occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-    lid = make_array(scan_states, vis_states, occluded_states, shape)
-    print(lid)
-    # # ----------------- Q ---------------------------------------
-
-
-    # # ----------------- Q ---------------------------------------
-    # ''' Set marker color based on belief '''
-    # belief_marker.marker.colors = []
-    # for s in model.states:
-    #     # print(next_label_belief[s,0])
-    #     cn = cm.get_color_norm(model.label_belief[s,0])
-    #     belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
-    # belief_marker.show_marker()
-    # rospy.sleep(0.25)
-    # # ----------------- Q ---------------------------------------
-
-
-    # # ----------------- Q ---------------------------------------
-    # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-    # direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-    # print(action_hist[1][-1])
-    # print(direction[action_hist[1][-1]])
-    # print(state_hist[-1])
-    # move_TB(vel_controller, direction[action_hist[1][-1]])
-    # # make_user_wait()
-    # # ----------------- Q ---------------------------------------
 
 
     make_user_wait("Press Enter to Start")
@@ -661,15 +636,56 @@ if __name__ == '__main__':
         # # Ask the user for a cardinal direction to move the robot, and then move it
         move_TB_keyboard(vel_controller, grid_converter)
 
-        # # Show how the converter can be used
-        # show_converter(vel_controller)
 
-        # # Show how to convert scan to grid point and find states that are out of range
+
+        # # ----------------- Q --------------------------------------- 
+        # # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
         scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
         vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
         occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-        array = make_array(scan_states, vis_states, occluded_states, shape)
-        print(array)
+        lid = make_array(scan_states, vis_states, occluded_states, shape)
+        print(lid)
+        # # ----------------- Q ---------------------------------------
+
+
+        # # ----------------- Q ---------------------------------------
+        # ''' Set marker color based on belief '''
+        # belief_marker.marker.colors = []
+        # for s in model.states:
+        #     # print(next_label_belief[s,0])
+        #     cn = cm.get_color_norm(model.label_belief[s,0])
+        #     belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+        # belief_marker.show_marker()
+        # rospy.sleep(0.25)
+        # # ----------------- Q ---------------------------------------
+
+
+        # # ----------------- Q ---------------------------------------
+        # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+        # direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+        # print(action_hist[1][-1])
+        # print(direction[action_hist[1][-1]])
+        # print(state_hist[-1])
+        # move_TB(vel_controller, direction[action_hist[1][-1]])
+        # # make_user_wait()
+        # # ----------------- Q ---------------------------------------
+
+
+
+
+
+
+
+
+        # # Show how the converter can be used
+        # show_converter(vel_controller)
+
+        # # # Show how to convert scan to grid point and find states that are out of range
+        # scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+        # vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+        # occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+        # array = make_array(scan_states, vis_states, occluded_states, shape)
+        # print(array)
 
         belief_marker.marker.colors = []
         for r in lid:
@@ -682,7 +698,7 @@ if __name__ == '__main__':
         belief_marker.show_marker()
         rospy.sleep(0.25)
 
-        make_user_wait()
+        make_user_wait("Enter to proceed")
 
 
 
