@@ -286,7 +286,7 @@ class ColorMixer(object):
 
 
 class BeliefMarker(object):
-    def __init__(self):
+    def __init__(self, grid_vars):
         self.pub = rospy.Publisher('visualization_marker', Marker, queue_size=5)
         rospy.sleep(0.5)
         self.marker = Marker()
@@ -297,7 +297,9 @@ class BeliefMarker(object):
         # self.marker.action = Marker.ADD   # Not sure what this is for???
         self.marker.points = []
         self.marker.pose.orientation = Quaternion(0,0,0,1)
-        self.marker.scale = Vector3(1,1,0.05)
+        sx = ( abs(grid_vars[0]) + abs(grid_vars[2]) ) / grid_vars[4]
+        sy = ( abs(grid_vars[1]) + abs(grid_vars[3]) ) / grid_vars[5]
+        self.marker.scale = Vector3(sx,sy,0.05)
         self.marker.colors = []
         self.marker.lifetime = rospy.Duration(0)
 
@@ -371,8 +373,8 @@ def next_waypoint_from_direction_v3(direction, current_pose, converter):
         direction is a string. current_pose is a Point object """
 
     current_state = converter.cart2state(current_pose)
-    print("The current pose is set to: {}".format(current_pose))
-    print("The current state is set to: {}".format(current_state))
+    # print("The current pose is set to: {}".format(current_pose))
+    # print("The current state is set to: {}".format(current_state))
     if direction == 'up':
         current_state -= converter.col
     elif direction == 'down':
@@ -386,8 +388,8 @@ def next_waypoint_from_direction_v3(direction, current_pose, converter):
         rospy.logerr(err_msg)
         sys.exit()
 
-    print("The goal state is now: {}".format(current_state))
-    print("The goal pose is now: {}".format(converter.state2cart(current_state)))
+    # print("The goal state is now: {}".format(current_state))
+    # print("The goal pose is now: {}".format(converter.state2cart(current_state)))
     return converter.state2cart(current_state)
 
 def next_waypoint_from_direction_ft(direction, current_pose):
@@ -567,8 +569,8 @@ if __name__ == '__main__':
 
     # Some values to use for the Grid class that does conversions (Meters)
     base_x = -0.25
-    base_y = -0.25
-    max_x = 3.1
+    base_y = -0.3
+    max_x = 3.15
     max_y = 1.9
     nb_y = 4
     nb_x = 6
@@ -601,7 +603,7 @@ if __name__ == '__main__':
 
     # Set up and initialize RVIZ marker objects
     cm = ColorMixer('green', 'red')
-    belief_marker = BeliefMarker()
+    belief_marker = BeliefMarker(grid_vars)
     l = np.arange(0,nb_x*nb_y) # Specific to size of state space
     for item in l:
         p = grid_converter.state2cart(item)
@@ -620,7 +622,6 @@ if __name__ == '__main__':
 
 
 
-
     # # ----------------- Q --------------------------------------- 
     # # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
     scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
@@ -629,6 +630,7 @@ if __name__ == '__main__':
     lid = make_array(scan_states, vis_states, occluded_states, shape)
     print(lid)
     # # ----------------- Q ---------------------------------------
+
 
     # # ----------------- Q ---------------------------------------
     # ''' Set marker color based on belief '''
@@ -641,16 +643,6 @@ if __name__ == '__main__':
     # rospy.sleep(0.25)
     # # ----------------- Q ---------------------------------------
 
-    belief_marker.marker.colors = []
-    for r in lid:
-        for s in r:
-            if s != 0:
-                cn = cm.get_color_norm(0)
-            else:
-                cn = cm.get_color_norm(1)
-            belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
-    belief_marker.show_marker()
-    rospy.sleep(0.25)
 
     # # ----------------- Q ---------------------------------------
     # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
@@ -662,9 +654,6 @@ if __name__ == '__main__':
     # # make_user_wait()
     # # ----------------- Q ---------------------------------------
 
-    # # Some initial point to show to use the controller
-    # init_point = Point(0.5, 0.0, None)
-    # vel_controller.go_to_point(init_point)
 
     make_user_wait("Press Enter to Start")
 
@@ -682,7 +671,48 @@ if __name__ == '__main__':
         array = make_array(scan_states, vis_states, occluded_states, shape)
         print(array)
 
+        belief_marker.marker.colors = []
+        for r in lid:
+            for s in r:
+                if s != 1:
+                    cn = cm.get_color_norm(0)
+                else:
+                    cn = cm.get_color_norm(1)
+                belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+        belief_marker.show_marker()
+        rospy.sleep(0.25)
+
         make_user_wait()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     ########################################################################################
     # The following are examples of how to use some of the features
