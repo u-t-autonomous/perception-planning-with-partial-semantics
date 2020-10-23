@@ -133,11 +133,12 @@ class VelocityController:
 
         # Send goal to navstack
         goal_reached = False
-        complete_counter = 0
+        # complete_counter = 0
         start_time = rospy.Time.now()
         end_time = start_time + rospy.Duration(30)
         self.goal_pub.publish(wp)
         # count = 0
+        switch = False
 
         while not goal_reached:
             # count += 1
@@ -151,22 +152,23 @@ class VelocityController:
 
             try:
                 status_value = self.goal_status.status_list[-1].status
-            except:
-                status_value = 1
-                complete_counter = 0
+            except Exception as e:
+                print(e)
+                continue
 
             if status_value == 1:
-                complete_counter = 0
+                # complete_counter = 0
+                switch = True
                 continue
             elif status_value == 4:
                 print("Status is 4: Waiting 2 seconds then sending the waypoiny again...")
                 rospy.sleep(2.)
-                complete_counter = 0
+                # complete_counter = 0
                 self.goal_pub.publish(wp)
-            elif status_value == 3:
-                complete_counter += 1
-                if complete_counter >= 80:
-                    goal_reached = True
+            elif status_value == 3 and switch:
+                # complete_counter += 1
+                # switch = False
+                goal_reached = True
             else:
                 rospy.logwarn("Goal status is: {}".format(self.goal_status.status_list[-1].status))
 
@@ -237,7 +239,7 @@ class Scanner(Scan):
 
         return states
 
-    def transform_coordinates(self, coord, from_frame='base_scan', to_frame='odom'):
+    def transform_coordinates(self, coord, from_frame='base_scan', to_frame='map'):
         ''' Gets frame transform at latest time '''
         p1 = PoseStamped()
         p1.header.frame_id = from_frame
@@ -577,10 +579,10 @@ if __name__ == '__main__':
     wait_for_time()
 
     # Some values to use for the Grid class that does conversions (Meters)
-    base_x = -0.25
-    base_y = -0.3
-    max_x = 3.1
-    max_y = 1.9
+    base_x = 0.0
+    base_y = 0.0
+    max_x = 3.45
+    max_y = 2.35
     nb_y = 4
     nb_x = 6
     shape = (nb_y,nb_x)
