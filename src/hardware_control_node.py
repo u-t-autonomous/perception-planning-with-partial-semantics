@@ -463,7 +463,7 @@ def move_TB_keyboard(controller_object, converter):
         wp = next_waypoint_from_direction_v3(dir_val, pose, converter)
         controller_object.go_to_point(wp)
 
-def move_TB(controller_object, dir_val):
+def move_TB(controller_object, dir_val, converter):
     """ Function to wrap up the process of moving the turtlebot via input.
         Requires ROS to be running and a controller object """
     pose = Point(controller_object.x, controller_object.y, None)
@@ -587,26 +587,6 @@ if __name__ == '__main__':
     nb_x = 6
     shape = (nb_y,nb_x)
 
-    # # Some values to use for the Grid class that does conversions (Meters)
-    # base_x = -0.15
-    # base_y = -0.15
-    # max_x = 3.25
-    # max_y = 2.3
-    # nb_y = 8
-    # nb_x = 12
-    # shape = (nb_y,nb_x)
-
-    # # Some values to use for the Grid class that does conversions (Meters)
-    # base_x = -feet
-    # base_y = -feet
-    # max_x = (12*feet - feet)
-    # max_y = (8*feet - feet)
-    # nb_y = 4
-    # nb_x = 6
-    # shape = (nb_y,nb_x)
-
-    # make_user_wait('Press enter to start')
-
     # Create velocity controller and converter objects
     vel_controller = VelocityController('/odom', '/cmd_vel')
     grid_vars = [base_x, base_y, max_x, max_y, nb_x, nb_y]
@@ -628,108 +608,200 @@ if __name__ == '__main__':
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
 
-
-
-
+    # Set initial point
+    print("Moving to the initial point")
+    init_point = grid_converter.state2cart(18)
+    vel_controller.go_to_point(init_point)
 
     make_user_wait("Press Enter to Start")
 
-    while True:
-        # # Ask the user for a cardinal direction to move the robot, and then move it
-        move_TB_keyboard(vel_controller, grid_converter)
+    ############  The following is the code from Mahsa that runs her algorithm  ############
 
+    # define simulation parameters
+    n_iter = 1
+    infqual_hist_all = []
+    risk_hist_all = []
+    timestep_all = []
+    plan_count_all = []
+    task_flag_all = []
 
+    for iter in range(n_iter):
 
-        # # ----------------- Q --------------------------------------- 
-        # # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
-        scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
-        vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-        occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-        lid = make_array(scan_states, vis_states, occluded_states, shape)
-        print(lid)
-        # # ----------------- Q ---------------------------------------
+        # create problem setting
+        model = MDP('gridworld')
+        # model.semantic_representation(prior_belief='exact')
+        # print(model.label_true)
+        model.semantic_representation(prior_belief='random-obs')
+        perc_flag = True
+        bayes_flag = True
+        replan_flag = True
+        div_test_flag = False
+        act_info_flag = True
+        spec_true = [[],[]]
+        for s in range(len(model.states)):
+            if model.label_true[s,0] == True:
+                spec_true[0].append(s)
+            if model.label_true[s,1] == True:
+                spec_true[1].append(s)
 
+        visit_freq = np.ones(len(model.states))
 
-        # # ----------------- Q ---------------------------------------
-        # ''' Set marker color based on belief '''
-        # belief_marker.marker.colors = []
-        # for s in model.states:
-        #     # print(next_label_belief[s,0])
-        #     cn = cm.get_color_norm(model.label_belief[s,0])
-        #     belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
-        # belief_marker.show_marker()
-        # rospy.sleep(0.25)
-        # # ----------------- Q ---------------------------------------
+    ##############################################################################
 
+        # simulation results
+        term_flag = False
+        task_flag = False
+        timestep = 0
+        max_timestep = 100 # Increase if agent does not reach goal
+        plan_count = 0
+        div_thresh = 0.001
+        n_sample = 10
+        risk_thresh = 0.25
+        state_hist = []
+        state_hist.append(model.init_state)
+        action_hist = [[],[]] # [[chosen action],[taken action]]
+        infqual_hist = []
+        infqual_hist.append(info_qual(model.label_belief))
+        risk_hist = []
 
-        # # ----------------- Q ---------------------------------------
-        # # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-        # direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
-        # print(action_hist[1][-1])
-        # print(direction[action_hist[1][-1]])
-        # print(state_hist[-1])
-        # move_TB(vel_controller, direction[action_hist[1][-1]])
-        # # make_user_wait()
-        # # ----------------- Q ---------------------------------------
+        while not term_flag:
 
+            if perc_flag:
+                # estimate map
+                label_est = estimate_AP(model.label_belief, method='risk-averse')
+                spec_est = [[],[]]
+                for s in range(len(model.states)):
+                    if label_est[s,0] == True:
+                        spec_est[0].append(s)
+                    if label_est[s,1] == True:
+                        spec_est[1].append(s)
+                # print("obstacle:   ",spec_est[0])
+                # print("target:     ",spec_est[1])
 
+            if replan_flag or (not replan_flag and plan_count==0):
+                # find an optimal policy
+                (vars_val, opt_policy) = verifier(copy.deepcopy(model), spec_est)
+                # print(opt_policy[49])
+                plan_count += 1
 
+            if act_info_flag:
+                # risk evaluation
+                prob_sat = stat_verifier(model,state_hist[-1],opt_policy,spec_est,n_sample)
+                risk = np.abs(vars_val[state_hist[-1]] - prob_sat); print(vars_val[state_hist[-1]],prob_sat)
+                risk_hist.append(risk)
+                print("Risk due to Perception Uncertainty:   ",risk)
 
-
-
-
-
-        # # Show how the converter can be used
-        # show_converter(vel_controller)
-
-        # # # Show how to convert scan to grid point and find states that are out of range
-        # scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
-        # vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-        # occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-        # array = make_array(scan_states, vis_states, occluded_states, shape)
-        # print(array)
-
-        belief_marker.marker.colors = []
-        for r in lid:
-            for s in r:
-                if s != 1:
-                    cn = cm.get_color_norm(0)
+                # perception policy
+                if risk > risk_thresh:
+                    # implement perception policy
+                    timestep += 1
+                    state = state_hist[-1]
+                    action = 0
                 else:
-                    cn = cm.get_color_norm(1)
+                    pass
+            timestep += 1
+            print("Timestep:   ",timestep)
+            state = state_hist[-1]
+            opt_act = opt_policy[state]
+            if 0 in opt_act and len(opt_act)>1:
+                opt_act = opt_act[1:]
+
+            action = np.random.choice(opt_act)
+
+            action_hist[0].append(action)
+            next_state = np.random.choice(model.states, p=model.transitions[state,action])
+            # identify taken action
+            for a in model.actions[model.enabled_actions[state]]:
+                if model.action_effect(state,a)[0] == next_state:
+                    action_taken = a
+            action_hist[1].append(action_taken)
+            state_hist.append(next_state)
+
+            # ----------------- Q --------------------------------------- 
+            # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
+            scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+            vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+            occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+            lid = make_array(scan_states, vis_states, occluded_states, shape)
+            print(lid)
+            # ----------------- Q ---------------------------------------
+
+            lid_adapted = np.reshape(lid, len(model.states))
+            # update belief
+            next_label_belief = copy.deepcopy(model.label_belief)
+            visit_freq_next = copy.deepcopy(visit_freq) + 1
+            for s in model.states:
+                # update frequency
+                if lid_adapted[s] == -1:
+                    visit_freq_next[s] -= 1
+                # update for 'obstacle'
+                elif lid_adapted[s] == 0:
+                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
+                elif lid_adapted[s] == 1:
+                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
+                # # update for 'target'
+                # elif lid_adapted[s] == 2:
+                #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
+                else:
+                    raise NameError("Given value in the Lidar output is unaccepted")
+            visit_freq = copy.deepcopy(visit_freq_next)
+
+            # ----------------- Q ---------------------------------------
+            ''' Set marker color based on belief '''
+            belief_marker.marker.colors = []
+            for s in model.states:
+                # print(next_label_belief[s,0])
+                cn = cm.get_color_norm(model.label_belief[s,0])
                 belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
-        belief_marker.show_marker()
-        rospy.sleep(0.25)
+            belief_marker.show_marker()
+            rospy.sleep(0.25)
+            # ----------------- Q ---------------------------------------
 
-        make_user_wait("Enter to proceed")
+            # ----------------- Q ---------------------------------------
+            # move to next state. Use: action_hist[1][-1] # {0 : 'stop', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+            direction = {0 : 'hold', 1 : 'up', 2 : 'right', 3 : 'down', 4 : 'left'}
+            print(action_hist[1][-1])
+            print(direction[action_hist[1][-1]])
+            print(state_hist[-1])
+            move_TB(vel_controller, direction[action_hist[1][-1]], grid_converter)
+            make_user_wait()
+            # ----------------- Q ---------------------------------------
 
+            # divergence test on belief
+            if div_test_flag:
+                div = info_div(model.label_belief,next_label_belief)
+                print("Belief Divergence:   ",div)
+                if info_div(model.label_belief,next_label_belief) > div_thresh:
+                    replan_flag = True
+                else:
+                    replan_flag = False
+            model.label_belief = np.copy(next_label_belief)
+            infqual_hist.append(info_qual(model.label_belief))
 
+            # check task realization
+            if model.label_true[state_hist[-1],0] == True:
+                term_flag = True
+                print("at a state with an obstacle")
 
+            if model.label_true[state_hist[-1],1] == True:
+                task_flag = True
+                term_flag = True
+                print("at a target state")
 
+            if timestep == max_timestep:
+                term_flag = True
+                print("timestep exceeded the maximum limit")
 
+        print("Number of Time Steps:   ",timestep)
+        print("Number of Replanning:   ",plan_count)
 
+        infqual_hist_all.append(infqual_hist)
+        risk_hist_all.append(risk_hist)
+        timestep_all.append(timestep)
+        plan_count_all.append(plan_count)
+        task_flag_all.append(int(task_flag))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    task_rate = np.mean(task_flag_all)
 
 
     ########################################################################################
@@ -754,3 +826,28 @@ if __name__ == '__main__':
     #     # print(array)
 
     #     make_user_wait()
+
+
+
+
+        # # Show how the converter can be used
+        # show_converter(vel_controller)
+
+        # # # Show how to convert scan to grid point and find states that are out of range
+        # scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+        # vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
+        # occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
+        # array = make_array(scan_states, vis_states, occluded_states, shape)
+        # print(array)
+
+
+        # belief_marker.marker.colors = []
+        # for r in lid:
+        #     for s in r:
+        #         if s != 1:
+        #             cn = cm.get_color_norm(0)
+        #         else:
+        #             cn = cm.get_color_norm(1)
+        #         belief_marker.marker.colors.append(ColorRGBA(cn[0], cn[1], cn[2], 1.0))
+        # belief_marker.show_marker()
+        # rospy.sleep(0.25)
