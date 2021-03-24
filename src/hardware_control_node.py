@@ -764,7 +764,6 @@ if __name__ == '__main__':
             print(direction[action_hist[1][-1]])
             print(state_hist[-1])
             move_TB(vel_controller, direction[action_hist[1][-1]], grid_converter)
-            make_user_wait()
             # ----------------- Q ---------------------------------------
 
             # divergence test on belief
