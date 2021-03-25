@@ -327,15 +327,15 @@ class MDP:
             self.label_true = np.zeros((len(self.states),len(self.properties)),
                                        dtype=np.bool) # true property labels of states
             if property_dist == 'random':
-#                # random obstacles
-#                n_obstacle = 10
-#                obstacle_pos = np.random.randint(0,len(self.states),n_obstacle)
+                # random obstacles
+                # n_obstacle = 10
+                # obstacle_pos = np.random.randint(0,len(self.states),n_obstacle)
                 # obstacle_pos = [2,6,9,17,19,21]
                 obstacle_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
                 self.label_true[obstacle_pos,0] = 1
-#                # random targets
-#                n_target = 2
-#                target_pos = np.random.randint(0,len(self.states),n_target)
+                # random targets
+                # n_target = 2
+                # target_pos = np.random.randint(0,len(self.states),n_target)
                 # target_pos = [467,468,469,470,
                 #               504,505,506,507,
                 #               541,542,543,544,
