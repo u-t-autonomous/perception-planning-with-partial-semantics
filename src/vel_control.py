@@ -107,7 +107,7 @@ class VelocityController:
             error_y = goal.y - self.y
             distance_error = np.sqrt(error_x**2 + error_y**2)
             angle_to_goal = np.arctan2(error_y, error_x)
-            angle_error = abs(self.yaw - angle_to_goal)
+            angle_error = abs(self.yaw - angle_to_goal) % (2*np.pi)
 
             total_distance_error = total_distance_error + distance_error
             total_angle_error = total_angle_error + angle_error
