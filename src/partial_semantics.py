@@ -183,7 +183,18 @@ class MDP:
         elif self.problem_type == 'book':
             self.book_ex()
         elif self.problem_type == 'gridworld':
-            self.gridworld_2D()
+            # Check to make sure gridworld_2D() arguments are provided
+            if kwargs.get('dim') == None:
+                print("ERROR. Must provide gridworld dimensions when creating gridworld model")
+                sys.exit()
+            if kwargs.get('p_correctmove') == None:
+                print("ERROR. Must provide p_correctmove when creating gridworld model")
+                sys.exit()
+            if kwargs.get('init_state') == None:
+                print("ERROR. Must provide init_state when creating gridworld model")
+                sys.exit()
+
+            self.gridworld_2D(dim=kwargs.get('dim'), p_correctmove=kwargs.get('p_correctmove'), init_state=kwargs.get('init_state'))
         else:
             raise NameError("Given problem type is not supported")
 

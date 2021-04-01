@@ -403,7 +403,7 @@ if __name__ == '__main__':
     for iter in range(n_iter):
 
         # create problem setting
-        model = MDP('gridworld')
+        model = MDP('gridworld', dim=(8,12), p_correctmove=0.95, init_state=0)
         # model.semantic_representation(prior_belief='exact')
         # print(model.label_true)
         model.semantic_representation(prior_belief='random-obs')
