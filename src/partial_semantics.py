@@ -310,7 +310,7 @@ class MDP:
                         inc_state = self.action_effect(state, inc_action)[0]
                         self.transitions[state, action, inc_state] = (1-self.p_correctmove)/n_inc_actions
 
-    def semantic_representation(self, property_dist='random', prior_belief='random'):
+    def semantic_representation(self, property_dist='random', obstacle_pos=None, target_pos=None, prior_belief='random'):
         """Assign semantics to MDP states"""
 
         if self.problem_type == 'simple':
@@ -342,7 +342,13 @@ class MDP:
                 # n_obstacle = 10
                 # obstacle_pos = np.random.randint(0,len(self.states),n_obstacle)
                 # obstacle_pos = [2,6,9,17,19,21]
-                obstacle_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
+                # obstacle_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
+                if obstacle_pos == None:
+                    print("ERROR. Must provide obstacle_pos list for gridworld problem type")
+                    sys.exit()
+                if target_pos == None:
+                    print("ERROR. Must provide target_pos list for gridworld problem type")
+                    sys.exit()
                 self.label_true[obstacle_pos,0] = 1
                 # random targets
                 # n_target = 2
@@ -352,7 +358,7 @@ class MDP:
                 #               541,542,543,544,
                 #               578,579,580,581]
                 # target_pos = [5]
-                target_pos = [95]
+                # target_pos = [95]
                 self.label_true[target_pos,1] = 1
 
             self.label_belief = np.zeros((len(self.states),len(self.properties)),

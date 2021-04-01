@@ -406,7 +406,9 @@ if __name__ == '__main__':
         model = MDP('gridworld', dim=(8,12), p_correctmove=0.95, init_state=0)
         # model.semantic_representation(prior_belief='exact')
         # print(model.label_true)
-        model.semantic_representation(prior_belief='random-obs')
+        obs_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
+        targ_pos = [95]
+        model.semantic_representation(obstacle_pos=obs_pos, target_pos=targ_pos, prior_belief='random-obs')
         perc_flag = True
         bayes_flag = True
         replan_flag = True
