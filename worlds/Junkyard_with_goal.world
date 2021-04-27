@@ -2024,7 +2024,7 @@
           <pose frame=''>0 0 0.05 0 -0 0</pose>
           <geometry>
             <mesh>
-              <uri>/home/quattro/.gazebo/models/euro_pallet/meshes/pallet.dae</uri>
+              <uri>~/.gazebo/models/euro_pallet/meshes/pallet.dae</uri>
               <scale>0.1 0.1 0.1</scale>
             </mesh>
           </geometry>
@@ -4374,7 +4374,7 @@
           <pose frame=''>0 0 0.05 0 -0 0</pose>
           <geometry>
             <mesh>
-              <uri>/home/quattro/.gazebo/models/euro_pallet/meshes/pallet.dae</uri>
+              <uri>~/.gazebo/models/euro_pallet/meshes/pallet.dae</uri>
               <scale>0.1 0.1 0.1</scale>
             </mesh>
           </geometry>
