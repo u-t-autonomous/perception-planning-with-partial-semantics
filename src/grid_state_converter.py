@@ -39,7 +39,7 @@ class Grid:
 
     def state2cart(self, state):
         curr_col = state % self.col
-        curr_row = state / self.col
+        curr_row = state // self.col
         position = Point()
         position.z = self.base.z
         # # The following is for when the 0 state is at the bottom left

@@ -1,4 +1,4 @@
-#! /usr/bin/env/ python2
+#! /usr/bin/env python3
 
 """
     Description:    Velocity controller node for experiment with Mahsa
@@ -256,12 +256,12 @@ def make_array(scan, vis, occl, array_shape):
     real_vis = vis - vis.intersection(real_occl)
 
     for v in real_vis:
-        row_ind = v / array_shape[1]
+        row_ind = v // array_shape[1]
         col_ind = v % array_shape[1]
         a[row_ind,col_ind] = 0
 
     for s in scan:
-        row_ind = s / array_shape[1]
+        row_ind = s // array_shape[1]
         col_ind = s % array_shape[1]
         a[row_ind,col_ind] = 1
 
