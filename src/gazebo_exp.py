@@ -19,7 +19,7 @@ from tf.transformations import euler_from_quaternion
 # Modules from this project
 from grid_state_converter import *
 import vel_control as vc
-from laser_scan import Scan
+from laser_scan import ScanList
 from color_mixer import ColorMixer
 # Imports for Algorithm side
 import copy
@@ -29,14 +29,15 @@ from partial_semantics import *
 from visualization_msgs.msg import Marker
 from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Quaternion, Vector3
+from visual_slam.msg import ObjectLocation, ObjectLocations
 
 
 # ------------------ Start Class Definitions ------------------
 
-class Scanner(Scan):
+class ScannerList(ScanList):
     ''' Converts a point cloud into a set of states that describe the state of a gridworld '''
     def __init__(self, scan_topic_name, grid_converter, debug=False):
-        super(Scanner, self).__init__(scan_topic_name)
+        super(ScannerList, self).__init__(scan_topic_name)
         self.grid_converter = grid_converter
         self.tf_buffer = tf2_ros.Buffer()
         self.listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -220,7 +221,7 @@ def get_vis_states_set(current_loc, converter, vis_dis=3.5):
 
     return s
 
-def get_occluded_states_set(controller, scanner, vis_dis=3.5):
+def get_occluded_states_set(controller, scanner, scanner_list, vis_dis=3.5):
     occl = set()
     temp = set()
     # Get all the points along a ray passing through each point in the pointcloud
@@ -235,15 +236,15 @@ def get_occluded_states_set(controller, scanner, vis_dis=3.5):
 
     # Convert those points included in the set to the odom frame and make a new set
     for item in temp:
-        new_pose = scanner.transform_coordinates(item)
-        if not (scanner.grid_converter.base.x < new_pose.pose.position.x < scanner.grid_converter.maximum.x) or not (scanner.grid_converter.base.y < new_pose.pose.position.y < scanner.grid_converter.maximum.y):
+        new_pose = scanner_list.transform_coordinates(item)
+        if not (scanner_list.grid_converter.base.x < new_pose.pose.position.x < scanner_list.grid_converter.maximum.x) or not (scanner_list.grid_converter.base.y < new_pose.pose.position.y < scanner_list.grid_converter.maximum.y):
             continue
         else:
             occlPoint = Point()
             occlPoint.x = new_pose.pose.position.x
             occlPoint.y = new_pose.pose.position.y
             occlPoint.z = new_pose.pose.position.z
-            occl.add(scanner.grid_converter.cart2state(occlPoint))
+            occl.add(scanner_list.grid_converter.cart2state(occlPoint))
 
     return occl
 
@@ -306,7 +307,7 @@ if __name__ == '__main__':
 
     belief_marker.show_marker()
     # Create scanner
-    scanner = Scanner('/scan', grid_converter)
+    scanner = ScannerList('/segmented_lidar_data', grid_converter)
     print("Sleeping for 3 seconds to allow all ROS nodes to start")
     rospy.sleep(3)
     # # Set initial point
@@ -431,31 +432,38 @@ if __name__ == '__main__':
 
             # ----------------- Q --------------------------------------- 
             # array from Lidar : lid = np.zeros((dim1,dim2), dtype=np.float64) # {0=empty, -1=unseen, 1=obstacle}
-            scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
+            object_names = scanner.get_names_list()
+            object_confidences = scanner.get_confidences_list()
+            point_clouds = scanner.pc_generator()
+            scan_states = [scanner.convert_pointCloud_to_gridCloud(pc) for pc in point_clouds]
+            # scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
             vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
-            occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-            lid = make_array(scan_states, vis_states, occluded_states, shape)
-            # print(lid)
+            occluded_states = [get_occluded_states_set(vel_controller, classified_scan, scanner) for classified_scan in scanner.data] # Not clean but was faster to implement
+            lid = [make_array(s_s, vis_states, o_s, shape) for s_s, o_s in zip(scan_states, occluded_states)]
+            for name, lidar in zip(object_names, lid):
+                print(name + "\n")
+                print(lidar)
             # ----------------- Q ---------------------------------------
 
-            lid_adapted = np.reshape(lid, len(model.states))
+            lid_adapted = [np.reshape(lidar, len(model.states)) for lidar in lid]
             # update belief
             next_label_belief = copy.deepcopy(model.label_belief)
             visit_freq_next = copy.deepcopy(visit_freq) + 1
-            for s in model.states:
-                # update frequency
-                if lid_adapted[s] == -1:
-                    visit_freq_next[s] -= 1
-                # update for 'obstacle'
-                elif lid_adapted[s] == 0:
-                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
-                elif lid_adapted[s] == 1:
-                    next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
-                # # update for 'target'
-                # elif lid_adapted[s] == 2:
-                #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
-                else:
-                    raise NameError("Given value in the Lidar output is unaccepted")
+            for lidar_adapted in lid_adapted:
+                for s in model.states:
+                    # update frequency
+                    if lidar_adapted[s] == -1:
+                        visit_freq_next[s] -= 1
+                    # update for 'obstacle'
+                    elif lidar_adapted[s] == 0:
+                        next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
+                    elif lidar_adapted[s] == 1:
+                        next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
+                    # # update for 'target'
+                    # elif lid_adapted[s] == 2:
+                    #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
+                    else:
+                        raise NameError("Given value in the Lidar output is unaccepted")
             visit_freq = copy.deepcopy(visit_freq_next)
 
             # ----------------- Q ---------------------------------------
