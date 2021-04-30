@@ -31,6 +31,8 @@ from std_msgs.msg import ColorRGBA
 from geometry_msgs.msg import Quaternion, Vector3
 from visual_slam.msg import ObjectLocation, ObjectLocations
 
+np.set_printoptions(linewidth=np.inf)
+
 
 # ------------------ Start Class Definitions ------------------
 
@@ -252,12 +254,12 @@ def get_occluded_states_set(controller, scanner_list, vis_dis=3.5):
         occl_list.append(occl)
     return occl_list
 
-def make_array(scan_list, vis, occl_list, array_shape):
+def make_array(scan_list, vis, occl_list, array_shape, confidence_list):
     ''' Assumes array_shape is (row,col).
         This does not check for overlapping states in the vis set and the scan set.
         It should work though bc of order. '''
     array_list = list()
-    for scan, occl in zip(scan_list, occl_list):
+    for scan, occl, confidence in zip(scan_list, occl_list, confidence_list):
         a = -np.ones(array_shape)
         real_occl = occl - occl.intersection(scan)
         real_vis = vis - vis.intersection(real_occl)
@@ -270,7 +272,7 @@ def make_array(scan_list, vis, occl_list, array_shape):
         for s in scan:
             row_ind = s // array_shape[1]
             col_ind = s % array_shape[1]
-            a[row_ind,col_ind] = 1
+            a[row_ind,col_ind] = confidence 
         array_list.append(a)
     return array_list
 
@@ -338,7 +340,7 @@ if __name__ == '__main__':
         model = MDP('gridworld', dim=(8,12), p_correctmove=0.95, init_state=0)
         # model.semantic_representation(prior_belief='exact')
         # print(model.label_true)
-        obs_pos = [6,7,8,10,18,19,20,22,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
+        obs_pos = [6,7,8,9,18,19,20,21,26,27,38,39,54,55,58,59,61,66,67,73,85,88,89,90,91]
         targ_pos = [95]
         model.semantic_representation(obstacle_pos=obs_pos, target_pos=targ_pos, prior_belief='random-obs')
         perc_flag = True
@@ -372,6 +374,8 @@ if __name__ == '__main__':
         infqual_hist = []
         infqual_hist.append(info_qual(model.label_belief))
         risk_hist = []
+
+        obstacle_map = np.array(["0".ljust(10) for i in range(len(model.states))])
 
         while not term_flag:
 
@@ -444,31 +448,37 @@ if __name__ == '__main__':
             scan_states = scanner.convert_pointCloud_to_gridCloud(scanner.pc_generator())
             vis_states = get_vis_states_set((vel_controller.x, vel_controller.y), grid_converter)
             occluded_states = get_occluded_states_set(vel_controller, scanner) # Not clean but was faster to implement
-            lid = make_array(scan_states, vis_states, occluded_states, shape)
+            lid = make_array(scan_states, vis_states, occluded_states, shape, object_confidences)
             for name, lidar in zip(object_names, lid):
                 print(name + "\n")
                 print(lidar)
             # ----------------- Q ---------------------------------------
 
-            lid_adapted = [np.reshape(lidar, len(model.states)) for lidar in lid]
+            lidar_adapted_list = [np.reshape(lidar, len(model.states)) for lidar in lid]
             # update belief
             next_label_belief = copy.deepcopy(model.label_belief)
             visit_freq_next = copy.deepcopy(visit_freq) + 1
-            for lidar_adapted in lid_adapted:
+            for name, lid_adapted in zip(object_names, lidar_adapted_list):
                 for s in model.states:
                     # update frequency
-                    if lidar_adapted[s] == -1:
-                        visit_freq_next[s] -= 1
+                    if lid_adapted[s] == -1:
+                        if visit_freq_next[s] != visit_freq[s]:
+                            visit_freq_next[s] -= 1
                     # update for 'obstacle'
-                    elif lidar_adapted[s] == 0:
-                        next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
-                    elif lidar_adapted[s] == 1:
-                        next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
+                    # elif lidar_adapted[s] == 0:
+                    #     next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 0) / visit_freq_next[s]
+                    # elif lidar_adapted[s] == 1:
+                    #     next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + 1) / visit_freq_next[s]
+                    elif (lid_adapted[s] >= 0) and (lid_adapted[s] <= 1):
+                        next_label_belief[s,0] = (next_label_belief[s,0]*visit_freq[s] + lid_adapted[s]) / visit_freq_next[s]
+                        if lid_adapted[s] >= 0.2:
+                            obstacle_map[s] = name[0:10].ljust(10)
                     # # update for 'target'
                     # elif lid_adapted[s] == 2:
                     #     next_label_belief[s,1] = (next_label_belief[s,1]*visit_freq[s] + 1) / visit_freq_next[s]
                     else:
                         raise NameError("Given value in the Lidar output is unaccepted")
+            print(np.reshape(obstacle_map, shape))
             visit_freq = copy.deepcopy(visit_freq_next)
 
             # ----------------- Q ---------------------------------------
